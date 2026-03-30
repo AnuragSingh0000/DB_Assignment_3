@@ -1,47 +1,71 @@
 from bplustree import BPlusTree
 
-
 class Table:
-    def __init__(self, name, schema, order=8, search_key=None):
-        self.name = name  # Name of the table
-        self.schema = schema  # Table schema: dict of {column_name: data_type}
-        self.order = order  # Order of the B+ Tree (max number of children)
-        self.data = BPlusTree(order=order)  # Underlying B+ Tree to store the data
-        self.search_key = search_key  # Primary or search key used for indexing (must be in schema)
+    def __init__(self, name, schema, order=8, search_key=None, constraints=None, foreign_keys=None, referenced_by=None):
+        self.name = name
+        self.schema = schema
+        self.order = order
+        self.data = BPlusTree(order=order)
+        
+        # constraints: {'age': {'CHECK': lambda x: x >= 18}, 'email': {'NOT NULL': True}}
+        self.constraints = constraints or {}
+        
+        # foreign_keys: {'user_id': 'Users'}  (Maps local column to target table)
+        self.foreign_keys = foreign_keys or {}
+        
+        # referenced_by: [('Orders', 'user_id')] (List of tuples: (Child Table, Child Column))
+        self.referenced_by = referenced_by or []
 
-        # Default to the first key in the schema if search_key isn't provided
-        if search_key is None:
+        self.search_key = search_key 
+        if self.search_key is None:
             self.search_key = list(schema.keys())[0]
 
         if self.search_key not in self.schema:
             raise ValueError(f"Search key '{self.search_key}' must be defined in the schema.")
 
-    def validate_record(self, record):
+    def validate_record(self, record, current_pk=None):
         """
-        Validate that the given record matches the table schema:
-        - All required columns are present
-        - Data types are correct
+        Validate schema, types, and single-table constraints (NOT NULL, UNIQUE, CHECK).
+        Does NOT check Foreign Keys (that requires the Transaction Manager).
         """
+        for col, rules in self.constraints.items():
+            if 'DEFAULT' in rules and col not in record:
+                record[col] = rules['DEFAULT']
+
         if set(record.keys()) != set(self.schema.keys()):
-            return False
+            return False, f"Schema mismatch. Expected {list(self.schema.keys())}"
 
         for key, val_type in self.schema.items():
-            val = record[key]
-            if val_type in (int, float) and isinstance(val, bool):
-                return False
-            if not isinstance(val, val_type) and not (val_type == float and isinstance(val, int)):
-                return False
+            val = record.get(key)
+            rules = self.constraints.get(key, {})
 
-        return True
+            if val is not None:
+                if val_type in (int, float) and isinstance(val, bool):
+                    return False, f"Type mismatch for '{key}'"
+                if not isinstance(val, val_type) and not (val_type == float and isinstance(val, int)):
+                    return False, f"Type mismatch for '{key}'"
 
+            if rules.get('NOT NULL') and val is None:
+                return False, f"Constraint Error: '{key}' cannot be NULL"
+
+            if 'CHECK' in rules and val is not None:
+                if not rules['CHECK'](val):
+                    return False, f"Constraint Error: CHECK failed for '{key}'='{val}'"
+
+            if rules.get('UNIQUE') and val is not None:
+                # FIX: Unpack the (key, value) tuple returned by the B+ Tree
+                for _, existing_rec in self.get_all():
+                    if current_pk is not None and existing_rec[self.search_key] == current_pk:
+                        continue
+                    if existing_rec[key] == val:
+                        return False, f"Constraint Error: UNIQUE failed. '{val}' already exists."
+
+        return True, "Valid"
+
+    # --- CRUD Operations ---
     def insert(self, record):
-        """
-        Insert a new record into the table.
-        The record should be a dictionary matching the schema.
-        The key used for insertion should be the value of the `search_key` field.
-        """
-        if not self.validate_record(record):
-            return False, "Invalid record schema"
+        is_valid, msg = self.validate_record(record)
+        if not is_valid: return False, msg
 
         key = record[self.search_key]
         if self.get(key) is not None:
@@ -51,53 +75,27 @@ class Table:
         return True, key
 
     def get(self, record_id):
-        """
-        Retrieve a single record by its ID (i.e., the value of the `search_key`)
-        """
         return self.data.search(record_id)
 
     def get_all(self):
-        """
-        Retrieve all records stored in the table in sorted order by search key
-        """
         return self.data.get_all()
 
     def update(self, record_id, new_record):
-        """
-        Update a record identified by `record_id` with `new_record` data.
-        Overwrites the existing entry.
-        """
-        if self.get(record_id) is None:
-            return False, "Record not found"
+        if self.get(record_id) is None: return False, "Record not found"
 
-        if not self.validate_record(new_record):
-            return False, "Invalid record schema"
+        is_valid, msg = self.validate_record(new_record, current_pk=record_id)
+        if not is_valid: return False, msg
 
         new_key = new_record[self.search_key]
-
         if record_id != new_key:
             if self.get(new_key) is not None:
                 return False, f"New primary key '{new_key}' already exists"
-
             self.data.delete(record_id)
             self.data.insert(new_key, new_record)
         else:
             self.data.update(new_key, new_record)
-
         return True, 'Record updated'
 
     def delete(self, record_id):
-        """
-        Delete the record from the table by its `record_id`
-        """
-        success = self.data.delete(record_id)
-        if success:
-            return True, 'Record deleted'
+        if self.data.delete(record_id): return True, 'Record deleted'
         return False, 'Record not found'
-
-    def range_query(self, start_value, end_value):
-        """
-        Perform a range query using the search key.
-        Returns records where start_value <= key <= end_value
-        """
-        return self.data.range_query(start_value, end_value)
