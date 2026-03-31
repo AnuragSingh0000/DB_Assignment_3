@@ -354,9 +354,15 @@ class TransactionManager:
         try:
             table = self._get_table(db_name, table_name)
 
-            # 1. REVERSE FOREIGN KEY CHECK (Ghost Rule)
+            # FIX: Lock the Parent (main) table FIRST to prevent deadlocks
+            tx.lock_table(db_name, table_name)
+            old = table.get(record_id)
+            if old is None:
+                raise TransactionError(f"Delete failed: Record {record_id} not found")
+
+            # REVERSE FOREIGN KEY CHECK (Ghost Rule)
             for child_table_name, child_col in table.referenced_by:
-                # FIX: Lock child table
+                # FIX: Lock the Child tables SECOND
                 tx.lock_table(db_name, child_table_name)
                 child_table = self._get_table(db_name, child_table_name)
                 
@@ -366,13 +372,6 @@ class TransactionManager:
                             f"Foreign Key Violation: Cannot delete '{record_id}' from '{table_name}'. "
                             f"It is still referenced by '{child_table_name}'."
                         )
-
-            # 2. LOCK & EXECUTE
-            # FIX: Lock main table
-            tx.lock_table(db_name, table_name)
-            old = table.get(record_id)
-            if old is None:
-                raise TransactionError(f"Delete failed: Record {record_id} not found")
 
             tx.record_delete(db_name, table_name, record_id, old)
             
