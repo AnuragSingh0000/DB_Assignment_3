@@ -1,3 +1,5 @@
+import os
+import pickle
 from table import Table
 
 
@@ -71,3 +73,68 @@ class DatabaseManager:
         if db_name in self.databases and table_name in self.databases[db_name]:
             return self.databases[db_name][table_name], "Success"
         return None, "Database or Table does not exist"
+
+    # ─── DURABILITY & RECOVERY METHODS ──────────────────────────────────────
+
+    def save_to_disk(self, filepath='database.dat'):
+        """
+        Saves tables, records, AND all constraint metadata to disk.
+        """
+        snapshot = {}
+        for db_name, tables in self.databases.items():
+            snapshot[db_name] = {}
+            for tname, table in tables.items():
+                snapshot[db_name][tname] = {
+                    'schema': table.schema,
+                    'order': getattr(table, 'order', 8),           # Safely get order, default 8
+                    'search_key': table.search_key,
+                    'constraints': getattr(table, 'constraints', {}), 
+                    'foreign_keys': getattr(table, 'foreign_keys', {}), 
+                    'referenced_by': getattr(table, 'referenced_by', []),
+                    'records': list(table.get_all())
+                }
+        with open(filepath, 'wb') as f:
+            pickle.dump(snapshot, f)
+
+    def load_from_disk(self, filepath='database.dat'):
+        """
+        Restores the complete state including metadata.
+        Safely ignores empty or corrupted files.
+        """
+        import os
+        import pickle
+        
+        if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+            return
+            
+        try:
+            with open(filepath, 'rb') as f:
+                snapshot = pickle.load(f)
+        except (EOFError, pickle.UnpicklingError):
+            print(f"Warning: '{filepath}' is corrupted or empty. Starting fresh.")
+            return
+            
+        for db_name, tables in snapshot.items():
+            # Create the database if it doesn't exist yet
+            if db_name not in self.databases:
+                self.create_database(db_name)
+                
+            for tname, info in tables.items():
+                self.create_table(
+                    db_name, 
+                    tname, 
+                    info['schema'], 
+                    order=info['order'], 
+                    search_key=info['search_key']
+                )
+                
+                tbl, _ = self.get_table(db_name, tname)
+                
+                # Restore metadata constraints
+                tbl.constraints = info['constraints']
+                tbl.foreign_keys = info['foreign_keys']
+                tbl.referenced_by = info['referenced_by']
+                
+                # Restore the actual records
+                for _, record in info['records']:
+                    tbl.insert(record)

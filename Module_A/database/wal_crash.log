@@ -1,2 +1,0 @@
-{"type": "BEGIN", "tx_id": "crash001", "timestamp": 1774843739.34279}
-{"type": "OP", "tx_id": "crash001", "op": "INSERT", "db": "sports_db", "table": "equipment", "key": 999, "before": null, "after": {"EquipmentID": 999, "EquipmentName": "Ghost Item", "TotalQuantity": 10, "EquipmentCondition": "New", "SportID": null}, "timestamp": 1774843739.3428235}

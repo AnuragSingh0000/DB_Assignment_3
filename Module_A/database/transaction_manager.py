@@ -4,7 +4,7 @@ transaction_manager.py
 Full ACID transaction engine layered on top of the existing B+ Tree
 database. Supports BEGIN / COMMIT / ROLLBACK across multiple tables,
 write-ahead logging (WAL) for durability / crash recovery, and
-basic lock management for isolation.
+table-level lock management for isolation.
 
 ACID guarantees:
   Atomicity  --> every operation in a transaction either commits or rolls back entirely.
@@ -100,14 +100,14 @@ class WALManager:
             open(self.log_path, "w").close()
 
 # ──────────────────────────────────────────────
-# Lock Manager (Row-Level Locks)
+# Lock Manager (Table-Level Locks)
 # ──────────────────────────────────────────────
 
 class LockManager:
     """
-    Per-row exclusive locking.
-    Locks are now tracked by a string combining db + table + key.
-    Example resource ID: 'mydb.Users:105'
+    Per-table exclusive locking.
+    Locks are tracked by a string combining db + table.
+    Example resource ID: 'mydb.Users'
     """
     def __init__(self):
         self._locks: dict[str, str] = {}  # resource_id → tx_id
@@ -118,13 +118,14 @@ class LockManager:
         while True:
             with self._lock:
                 owner = self._locks.get(resource_id)
+                # Re-entrant lock: if the transaction already owns the table lock, let it proceed
                 if owner is None or owner == tx_id:
                     self._locks[resource_id] = tx_id
                     return
             
             if time.time() > deadline:
                 raise DeadlockError(
-                    f"Transaction {tx_id} could not acquire lock on "
+                    f"Transaction {tx_id} could not acquire table lock on "
                     f"'{resource_id}' (held by {self._locks.get(resource_id)})"
                 )
             time.sleep(0.05)
@@ -163,9 +164,9 @@ class Transaction:
     def record_delete(self, db_name: str, table_name: str, key, old_record):
         self._record(OpType.DELETE, db_name, table_name, key, old_record, None)
 
-    def lock_row(self, db_name: str, table_name: str, key):
-        # Create a unique string for the specific row
-        resource_id = f"{db_name}.{table_name}:{key}"
+    def lock_table(self, db_name: str, table_name: str):
+        # FIX: Unique string is now just DB + Table Name
+        resource_id = f"{db_name}.{table_name}"
         self._lock_mgr.acquire(self.tx_id, resource_id)
 
     def undo_ops(self) -> list[dict]:
@@ -178,10 +179,17 @@ class Transaction:
 class TransactionManager:
     def __init__(self, db_manager, wal_path: str = "wal.log"):
         self._db   = db_manager
+        
+        # Load snapshot from disk BEFORE processing the WAL!
+        if hasattr(self._db, 'load_from_disk'):
+            self._db.load_from_disk('database.dat')
+            
         self._wal  = WALManager(wal_path)
         self._lock_mgr = LockManager()
         self._active: dict[str, Transaction] = {}
         self._global_lock = threading.Lock()
+        
+        # Recover uncommitted changes
         self.recover()
 
     def begin(self) -> Transaction:
@@ -202,6 +210,10 @@ class TransactionManager:
         self._lock_mgr.release_all(tx.tx_id)
         with self._global_lock:
             self._active.pop(tx.tx_id, None)
+            
+        if hasattr(self._db, 'save_to_disk'):
+            self._db.save_to_disk('database.dat')
+            
         print(f"[TxManager] COMMIT tx={tx.tx_id}")
         return True, f"Transaction {tx.tx_id} committed successfully"
 
@@ -237,16 +249,29 @@ class TransactionManager:
 
     # ── CRUD Wrappers ──
 
+    def read(self, tx: Transaction, db_name: str, table_name: str, record_id):
+        self._assert_active(tx)
+        try:
+            # FIX: Lock the entire table before reading
+            tx.lock_table(db_name, table_name) 
+            table = self._get_table(db_name, table_name)
+            
+            record = table.get(record_id)
+            return record
+        except Exception as e:
+            self.rollback(tx)
+            raise e
+
     def insert(self, tx: Transaction, db_name: str, table_name: str, key, record: dict):
         self._assert_active(tx)
         try:
-            table = self._get_table(db_name, table_name)
-
             # 1. FOREIGN KEY CHECK
+            table = self._get_table(db_name, table_name)
             for fk_col, target_table_name in table.foreign_keys.items():
                 fk_value = record.get(fk_col)
                 if fk_value is not None:
-                    tx.lock_row(db_name, target_table_name, fk_value)
+                    # FIX: Lock target table for reading during FK check
+                    tx.lock_table(db_name, target_table_name)
                     target_table = self._get_table(db_name, target_table_name)
                     
                     if target_table.get(fk_value) is None:
@@ -256,7 +281,8 @@ class TransactionManager:
                         )
 
             # 2. LOCK & EXECUTE
-            tx.lock_row(db_name, table_name, key)
+            # FIX: Lock the table being inserted into
+            tx.lock_table(db_name, table_name)
             tx.record_insert(db_name, table_name, key, record)
             
             ok, msg = table.insert(record)
@@ -266,7 +292,6 @@ class TransactionManager:
             return True, f"Inserted key={key} into {table_name}"
 
         except Exception as e:
-            # CATCH-ALL: Automatically rolls back on ANY failure, then re-raises the error
             self.rollback(tx)
             raise e
 
@@ -280,7 +305,8 @@ class TransactionManager:
             for fk_col, target_table_name in table.foreign_keys.items():
                 fk_value = new_record.get(fk_col)
                 if fk_value is not None:
-                    tx.lock_row(db_name, target_table_name, fk_value)
+                    # FIX: Lock target table
+                    tx.lock_table(db_name, target_table_name)
                     target_table = self._get_table(db_name, target_table_name)
                     
                     if target_table.get(fk_value) is None:
@@ -289,12 +315,27 @@ class TransactionManager:
                             f"does not exist in '{target_table_name}'"
                         )
 
-            # 2. LOCK & EXECUTE
-            tx.lock_row(db_name, table_name, record_id)
+            # 2. LOCK & FETCH OLD
+            # FIX: Lock main table
+            tx.lock_table(db_name, table_name)
             old = table.get(record_id)
             if old is None:
                 raise TransactionError(f"Update failed: Record {record_id} not found")
 
+            # 3. REVERSE FOREIGN KEY CHECK (Ghost Rule for PK updates)
+            if old[table.search_key] != new_record[table.search_key]:
+                for child_table_name, child_col in table.referenced_by:
+                    # FIX: Lock child table
+                    tx.lock_table(db_name, child_table_name)
+                    child_table = self._get_table(db_name, child_table_name)
+                    for _, child_rec in child_table.get_all():
+                        if child_rec.get(child_col) == record_id:
+                            raise ConstraintError(
+                                f"Foreign Key Violation: Cannot change PK '{record_id}' in '{table_name}'. "
+                                f"It is still referenced by '{child_table_name}'."
+                            )
+
+            # 4. WAL & EXECUTE
             tx.record_update(db_name, table_name, record_id, old, new_record)
             
             ok, msg = table.update(record_id, new_record)
@@ -304,7 +345,6 @@ class TransactionManager:
             return True, f"Updated key={record_id}"
 
         except Exception as e:
-            # CATCH-ALL
             self.rollback(tx)
             raise e
 
@@ -316,6 +356,8 @@ class TransactionManager:
 
             # 1. REVERSE FOREIGN KEY CHECK (Ghost Rule)
             for child_table_name, child_col in table.referenced_by:
+                # FIX: Lock child table
+                tx.lock_table(db_name, child_table_name)
                 child_table = self._get_table(db_name, child_table_name)
                 
                 for _, child_rec in child_table.get_all():
@@ -326,7 +368,8 @@ class TransactionManager:
                         )
 
             # 2. LOCK & EXECUTE
-            tx.lock_row(db_name, table_name, record_id)
+            # FIX: Lock main table
+            tx.lock_table(db_name, table_name)
             old = table.get(record_id)
             if old is None:
                 raise TransactionError(f"Delete failed: Record {record_id} not found")
@@ -340,7 +383,6 @@ class TransactionManager:
             return True, f"Deleted key={record_id}"
 
         except Exception as e:
-            # CATCH-ALL
             self.rollback(tx)
             raise e
         
@@ -355,7 +397,6 @@ class TransactionManager:
         tname = op_entry["table"]
         key   = op_entry["key"]
 
-        # Safely fetch the exact table using the database name
         table = self._get_table(db, tname)
 
         if op == OpType.INSERT:
@@ -363,7 +404,48 @@ class TransactionManager:
         elif op == OpType.DELETE:
             table.insert(op_entry["before"])
         elif op == OpType.UPDATE:
-            table.update(key, op_entry["before"])
+            old_record = op_entry["before"]
+            new_record = op_entry.get("after") 
+            
+            old_pk = old_record[table.search_key]
+            
+            if new_record and new_record[table.search_key] != old_pk:
+                new_pk = new_record[table.search_key]
+                table.delete(new_pk)
+                table.insert(old_record)
+            else:
+                table.update(old_pk, old_record)
+
+    def _redo_single(self, op_entry: dict):
+        """Idempotent REDO operation for committed transactions."""
+        op    = OpType(op_entry["op"])
+        db    = op_entry["db"]
+        tname = op_entry["table"]
+        key   = op_entry["key"]
+
+        table = self._get_table(db, tname)
+
+        if op == OpType.INSERT:
+            if table.get(key) is None:  # Idempotency check
+                table.insert(op_entry["after"])
+        elif op == OpType.DELETE:
+            if table.get(key) is not None:
+                table.delete(key)
+        elif op == OpType.UPDATE:
+            old_pk = op_entry["before"][table.search_key]
+            new_record = op_entry["after"]
+            new_pk = new_record[table.search_key]
+            
+            # If the PK changed during the update
+            if old_pk != new_pk:
+                if table.get(old_pk) is not None:
+                    table.delete(old_pk)
+                if table.get(new_pk) is None:
+                    table.insert(new_record)
+            else:
+                # Normal update
+                if table.get(old_pk) is not None:
+                    table.update(old_pk, new_record)
 
     def recover(self):
         entries = self._wal.read_log()
@@ -384,13 +466,31 @@ class TransactionManager:
             elif e["type"] in ("COMMIT", "ABORT"):
                 tx_final[tid] = e["type"]
 
+        # ─── PHASE 1: REDO COMMITTED TRANSACTIONS ───
+        # Apply ops forwards (chronological order)
+        redo_count = 0
+        for tid, ops in tx_logs.items():
+            if tx_final.get(tid) == "COMMIT":
+                for op_entry in ops:
+                    try:
+                        self._redo_single(op_entry)
+                    except Exception as ex:
+                        print(f"  [Recovery] REDO warning on tx={tid}: {ex}")
+                redo_count += 1
+                
+        if redo_count:
+            print(f"[Recovery] REDONE {redo_count} committed transaction(s)")
+
+        # ─── PHASE 2: UNDO INCOMPLETE TRANSACTIONS ───
+        # Apply ops backwards (reverse chronological order)
         rolled_back = []
         for tid, ops in tx_logs.items():
             final = tx_final.get(tid)
             if final == "COMMIT":
                 continue 
+            
             if final is None:
-                print(f"[Recovery] Rolling back incomplete tx={tid} ({len(ops)} ops)")
+                print(f"[Recovery] UNDOING incomplete tx={tid} ({len(ops)} ops)")
                 for op_entry in reversed(ops):
                     try:
                         self._undo_single({
@@ -402,13 +502,14 @@ class TransactionManager:
                             "after":  op_entry.get("after"),
                         })
                     except Exception as ex:
-                        print(f"  [Recovery] warning: {ex}")
+                        print(f"  [Recovery] UNDO warning: {ex}")
                 rolled_back.append(tid)
 
         if rolled_back:
-            print(f"[Recovery] Rolled back {len(rolled_back)} incomplete transaction(s)")
+            print(f"[Recovery] UNDONE {len(rolled_back)} incomplete transaction(s)")
 
-        # NOTE: Only call self._wal.clear() if your B+ Tree has fully flushed its data 
-        # to disk upon recovery. If your tree stays in memory, remove this line!
+        # Save the fully recovered state to disk and clear the WAL
+        if hasattr(self._db, 'save_to_disk'):
+            self._db.save_to_disk('database.dat')
         self._wal.clear()
         print("[Recovery] WAL compacted")

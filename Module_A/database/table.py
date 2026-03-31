@@ -7,7 +7,8 @@ class Table:
         self.order = order
         self.data = BPlusTree(order=order)
         
-        # constraints: {'age': {'CHECK': lambda x: x >= 18}, 'email': {'NOT NULL': True}}
+        # constraints: {'age': {'CHECK': 'x >= 18'}, 'email': {'NOT NULL': True}}
+        # Note: CHECK constraints are now strings to allow safe pickling.
         self.constraints = constraints or {}
         
         # foreign_keys: {'user_id': 'Users'}  (Maps local column to target table)
@@ -28,6 +29,7 @@ class Table:
         Validate schema, types, and single-table constraints (NOT NULL, UNIQUE, CHECK).
         Does NOT check Foreign Keys (that requires the Transaction Manager).
         """
+        # Apply defaults
         for col, rules in self.constraints.items():
             if 'DEFAULT' in rules and col not in record:
                 record[col] = rules['DEFAULT']
@@ -39,21 +41,31 @@ class Table:
             val = record.get(key)
             rules = self.constraints.get(key, {})
 
+            # Type Checking
             if val is not None:
                 if val_type in (int, float) and isinstance(val, bool):
                     return False, f"Type mismatch for '{key}'"
                 if not isinstance(val, val_type) and not (val_type == float and isinstance(val, int)):
                     return False, f"Type mismatch for '{key}'"
 
+            # NOT NULL Check
             if rules.get('NOT NULL') and val is None:
                 return False, f"Constraint Error: '{key}' cannot be NULL"
 
+            # String-based CHECK Constraint Evaluation
             if 'CHECK' in rules and val is not None:
-                if not rules['CHECK'](val):
-                    return False, f"Constraint Error: CHECK failed for '{key}'='{val}'"
+                check_expr = rules['CHECK']
+                try:
+                    # Evaluate the string expression. 
+                    # 'x' represents the current column value, 'record' is the full dictionary.
+                    is_valid = eval(check_expr, {}, {"x": val, "record": record})
+                    if not is_valid:
+                        return False, f"Constraint Error: CHECK failed for '{key}'='{val}'"
+                except Exception as e:
+                    return False, f"Constraint Error: Failed to evaluate CHECK '{check_expr}' for '{key}': {str(e)}"
 
+            # UNIQUE Check
             if rules.get('UNIQUE') and val is not None:
-                # FIX: Unpack the (key, value) tuple returned by the B+ Tree
                 for _, existing_rec in self.get_all():
                     if current_pk is not None and existing_rec[self.search_key] == current_pk:
                         continue
