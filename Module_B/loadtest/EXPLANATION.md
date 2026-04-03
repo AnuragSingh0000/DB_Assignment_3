@@ -16,7 +16,7 @@
 8. [ACID Property Tests — Explained Step by Step](#8-acid-property-tests--explained-step-by-step)
 9. [Failure Simulation Tests — Explained Step by Step](#9-failure-simulation-tests--explained-step-by-step)
 10. [Locust Stress Tests — Explained Step by Step](#10-locust-stress-tests--explained-step-by-step)
-11. [The Bug Fix We Made](#11-the-bug-fix-we-made)
+11. [The Bug Fixes We Made](#11-the-bug-fixes-we-made)
 12. [The Verification System](#12-the-verification-system)
 13. [How to Run Everything](#13-how-to-run-everything)
 14. [What to Show in Your Video Demo](#14-what-to-show-in-your-video-demo)
@@ -57,7 +57,7 @@ ACID is a set of four guarantees that databases provide to keep your data safe:
 
 ### What is a Connection Pool?
 
-Opening a database connection is expensive (like dialing a phone number). A **connection pool** keeps a fixed number of connections open and reuses them. Our app has **5 connections per database** (olympia_auth and olympia_track). If all 5 are busy and a 6th request comes in, it has to **wait** (or fail).
+Opening a database connection is expensive (like dialing a phone number). A **connection pool** keeps a fixed number of connections open and reuses them. In the current code, the app uses **32 pooled connections per database** (`olympia_auth` and `olympia_track`). If enough requests arrive at once, later requests still have to wait for a free connection or fail under pressure.
 
 ### What is Locust?
 
@@ -93,7 +93,9 @@ A **thread** is a lightweight unit of execution. When we say "20 threads," think
 
 - **Authentication:** JWT tokens stored in HTTP-only cookies. You log in, get a cookie, and every subsequent request includes that cookie automatically.
 
-- **Connection pool:** 5 connections per database. This is intentionally small, which makes it interesting for pool exhaustion tests.
+- **Tamper-detection triggers:** Normal API writes are supposed to set a special `@api_context` session variable so MySQL can distinguish "real API traffic" from suspicious direct SQL writes.
+
+- **Connection pool:** The current code uses 32 pooled connections per database. Our failure tests still deliberately oversubscribe the system to study contention, recovery, and graceful degradation.
 
 ---
 
@@ -141,18 +143,40 @@ When the code does `return` instead of `raise`, Python doesn't see an exception.
 
 **Our fix:** Changed `return` to `raise HTTPException(...)`. Now when the users INSERT fails, an exception propagates, `get_cross_db()` triggers rollback, and the Member row is also removed. Atomicity preserved.
 
-### Weakness 2: ID Generation is Collision-Prone
+### Bug 2: Missing API Context Secret Caused a Hidden Audit Storm
 
-**File:** `app/services/id_generation.py`, lines 22-33
+**Files:** `app/database.py`, `.env`, `.env.example`
 
-The app generates IDs using `SELECT MAX(ID) + 1`. When two requests run simultaneously:
-1. Both read `MAX(ID) = 100`
-2. Both try to insert `ID = 101`
-3. One fails with a duplicate key error
+The schema includes tamper-detection triggers. They are meant to fire only when someone writes directly to MySQL without going through the API. But during debugging we discovered that `API_CONTEXT_SECRET` was missing, so the app never correctly marked its own writes as API-originated.
 
-The code has a **retry loop** (max 3 attempts) to handle this, but under heavy concurrency, all 3 retries could fail too. This isn't a bug per se — it's a known weakness. Our test verifies the retry mechanism actually works and no duplicate IDs slip through.
+That meant a normal API write could silently trigger extra database work:
+1. The real INSERT/UPDATE from the API
+2. A trigger firing because MySQL thought it was direct DB access
+3. An extra insert into `direct_modification_log`
+4. Another extra insert into `audit_log`
 
-### Weakness 3: Registration Uses Check-Then-Insert Without Locks
+Under concurrency this created a hidden audit bottleneck. Requests started backing up on `audit_log`, and once enough piled up, unrelated endpoints like `/auth/login` and `/auth/isAuth` also began failing or timing out.
+
+**Our fix:** Add `API_CONTEXT_SECRET` to the env files and make the app fail fast on startup if it is missing.
+
+### Bug 3: ID Generation Used a Stale Transaction Snapshot
+
+**File:** `app/services/id_generation.py`
+
+The app was using `SELECT MAX(ID) + 1`, which is already a fragile pattern under concurrency. But the deeper issue was that this query was being run on the same long-lived transaction as the business logic.
+
+That matters because waiting requests could keep seeing an old snapshot of the table:
+1. Request A locks rows and inserts a new record
+2. Request B waits
+3. Request A commits
+4. Request B finally wakes up, but its current transaction can still re-read an old `MAX(ID)`
+5. Request B retries the same primary key and collides again
+
+This is why we saw duplicate-key errors and timeouts in places that should have serialized cleanly.
+
+**Our fix:** Keep the named MySQL lock, but read the next ID on a short dedicated autocommit connection so each retry sees the latest committed value.
+
+### Weakness 4: Registration Uses Check-Then-Insert Without Locks
 
 **File:** `app/routers/registration.py`, lines 31-36
 
@@ -214,17 +238,19 @@ This file stores all the settings in one place so every other file can import th
 ```python
 BASE_URL = "http://localhost:8000"       # Where the FastAPI app is running
 
-ADMIN_CREDS  = {"username": "admin",  "password": "admin123"}
-COACH_CREDS  = {"username": "coach1", "password": "coach123"}
-PLAYER_CREDS = {"username": "player1","password": "player123"}
+ADMIN_CREDS  = {"username": "amit_admin",   "password": "password123"}
+COACH_CREDS  = {"username": "sunita_coach", "password": "password123"}
+PLAYER_CREDS = {"username": "meera_player", "password": "password123"}
 
 THREAD_COUNT  = 20      # How many concurrent threads for race tests
 EQUIPMENT_QTY = 5       # Total equipment quantity for the race test
+REQUEST_TIMEOUT = 15    # Per-request timeout so hangs show up clearly
 ```
 
 **Why these values?** 
 - `THREAD_COUNT=20` with `EQUIPMENT_QTY=5` means 20 threads fight over 5 items. This creates a 4:1 oversubscription — extreme enough to trigger race conditions if locks are broken, but not so extreme that the server just dies.
-- The credentials must match users that already exist in your database.
+- The credentials must match seeded users that already exist in your database.
+- `REQUEST_TIMEOUT` is important because it turns "the server got stuck" into a visible test failure instead of letting a request hang forever.
 
 ### helpers.py — Reusable Test Utilities
 
@@ -233,15 +259,21 @@ This file provides building blocks that all test files use:
 **Login sessions:**
 ```python
 def login_session(creds):
-    s = requests.Session()                              # Create a new HTTP session
-    r = s.post(f"{BASE_URL}/auth/login", json=creds)    # Login via API
-    r.raise_for_status()                                # Crash if login fails
-    return s                                            # Session now has auth cookies
+    cached_cookies = _AUTH_COOKIE_CACHE.get(cache_key)
+    if cached_cookies is None:
+        with _AUTH_COOKIE_LOCK:
+            seed_session = requests.Session()
+            r = seed_session.post(f"{BASE_URL}/auth/login", json=creds, timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            cached_cookies = requests.utils.dict_from_cookiejar(seed_session.cookies)
+    s = requests.Session()
+    s.cookies = cookiejar_from_dict(cached_cookies)
+    return s
 ```
 
-A `requests.Session` automatically stores and sends cookies. After calling `/auth/login`, the session has the `access_token` cookie and will send it with every subsequent request — just like a browser.
+A `requests.Session` automatically stores and sends cookies. We now do one real login per credential set, cache the cookie jar, and then create fresh sessions from that cached cookie state. That keeps the tests realistic while avoiding an unnecessary login storm.
 
-**Why each thread gets its own session:** In `test_race_conditions.py`, every thread calls `coach_session()` to get its own independent session. This simulates **different users** (or the same user on different devices) hitting the API simultaneously. If they shared one session, requests would be serialized (sent one at a time), defeating the purpose.
+**Why each thread still gets its own session:** In `test_race_conditions.py`, every thread still calls `coach_session()` or `admin_session()` to get its own independent session object. This simulates separate clients. The important difference is that those sessions no longer all have to hit `/auth/login` at once before the real test even starts.
 
 **Test data factories:**
 ```python
@@ -350,22 +382,21 @@ This must return exactly 5. If it returns 6+, the lock failed and we over-issued
 
 ### RC-3: Concurrent ID Generation
 
-**Goal:** Verify that the `MAX+1` retry mechanism handles ID collisions without producing duplicates.
+**Goal:** Verify that concurrent member creation produces unique IDs without timeouts or duplicate rows.
 
 **Setup:** Launch 20 threads all creating new members simultaneously.
 
-**What happens:**
-- All 20 call `SELECT COALESCE(MAX(MemberID), 0) + 1`
-- Many get the same number (e.g., all get `101`)
-- First to INSERT with `101` succeeds
-- Others get "duplicate primary key" error
-- The retry loop runs again: `MAX(MemberID)` is now `101`, so try `102`
-- Eventually most succeed, some might fail after 3 retries
+**What happens now:**
+- All 20 requests race to create members at the same time
+- `insert_with_generated_id()` takes a named MySQL lock for the Member ID generator
+- The next ID is read on a short dedicated autocommit connection
+- One request inserts, releases the lock, and the next request sees the updated `MAX(MemberID)`
+- This serializes only the ID allocation step, which is the tiny critical section we actually care about
 
 **Expected result:**
-- `success_count + fail_count = 20` (no requests silently dropped)
+- All 20 requests are accounted for
+- All 20 succeed in the normal race test
 - Zero duplicate MemberIDs in the database
-- Some failures are acceptable (retry exhaustion), but no data corruption
 
 **Why we verify with SQL:**
 ```sql
@@ -489,20 +520,20 @@ Timeline:
 **Goal:** When more requests come in than the connection pool can handle, the system should degrade gracefully (errors, not corruption).
 
 **Setup:**
-- Our app has **5 connections** per database pool
-- We send **35 concurrent requests** (7x overload!)
+- The current app pool is larger than the original version, but we still send **35 concurrent requests** to create deliberate connection pressure
+- The goal is not "prove exactly the 6th request fails"; the goal is "prove the system degrades gracefully under resource pressure and then recovers"
 
 **What happens:**
-- The first 5 requests each grab a connection from the pool
-- Requests 6-35 can't get a connection — the pool is exhausted
-- They either wait (if configured with a timeout) or fail immediately with a pool error
+- A burst of concurrent work competes for pooled DB connections, row locks, CPU, and request slots
+- Some requests may proceed, others may wait, and others may fail depending on timing
+- The important property is that the system recovers afterward and does not corrupt data
 
 **What we verify:**
 1. Some requests succeed, many fail — that's expected and OK
 2. After the burst subsides (all threads finish), the system **recovers** — new requests work normally
 3. No data corruption — the equipment invariant (issued <= total) still holds
 
-**Why 35 threads?** It's 7x the pool size. Enough to guarantee exhaustion, but not so many that the test takes forever.
+**Why 35 threads?** It's a strong enough burst to stress the current app configuration without turning the test into a pointless denial-of-service script.
 
 ### FS-3: Server Crash Simulation
 
@@ -596,11 +627,13 @@ locust -f locustfile.py --host=http://localhost:8000 --headless -u 50 -r 10 -t 2
 
 ---
 
-## 11. The Bug Fix We Made
+## 11. The Bug Fixes We Made
 
-### The Change
+This turned out to be a multi-layer failure, not a one-line bug. We fixed several things that were interacting badly under concurrency.
 
-**File:** `app/routers/members.py`, line 310
+### Fix 1: Proper Rollback in Cross-DB Member Creation
+
+**File:** `app/routers/members.py`
 
 **Before (buggy):**
 ```python
@@ -616,9 +649,9 @@ except Exception as e:
     raise HTTPException(status_code=400, detail=humanize_db_error(e)) from e
 ```
 
-### Why This One-Line Change Matters
+This is what restored atomicity across `olympia_track.Member` and `olympia_auth.users`.
 
-The entire difference is `return` vs `raise`. Here's the flow:
+In the same member-creation path we also added `normalize_member_gender(...)`, so payloads like `Male`, `Female`, and `Other` are normalized to the database-safe `M`, `F`, and `O` values before insert.
 
 ```
                     BEFORE (buggy)                    |              AFTER (fixed)
@@ -631,9 +664,57 @@ The entire difference is `return` vs `raise`. Here's the flow:
 6. Member row is SAVED (orphaned!)                    | 6. Member row is REMOVED (correct!)
 ```
 
-### How We Test It
+### Fix 2: Add `API_CONTEXT_SECRET` So Normal API Writes Don't Trigger Tamper Logging
 
-The atomicity test creates a member with a duplicate username. Before the fix, it would detect an orphaned Member row. After the fix, it verifies the Member row was properly cleaned up.
+**Files:** `app/database.py`, `.env`, `.env.example`
+
+The hidden performance killer was the missing API context secret. Without it, the database's tamper-detection triggers treated ordinary API writes as suspicious direct SQL writes and generated extra audit records inside MySQL.
+
+That meant one application write could create trigger-generated writes behind the scenes, which is why the system looked fine at low load but fell apart during concurrency tests.
+
+We fixed this by:
+- adding `API_CONTEXT_SECRET` to the env files
+- setting `@api_context` on DB connections
+- failing fast at startup if the secret is missing
+
+### Fix 3: Read New IDs Using a Fresh Autocommit View
+
+**File:** `app/services/id_generation.py`
+
+We kept the named-lock approach for ID generation, but changed the "what is the next ID?" read to happen on a short dedicated autocommit connection.
+
+This matters because retries now see the latest committed `MAX(ID)` value instead of getting stuck on a stale snapshot from an older transaction.
+
+### Fix 3.5: Translate Registration/Participation Duplicate-Key Races Into Clean 409s
+
+**File:** `app/routers/registration.py`
+
+The UNIQUE constraints were already the real safety net, but we now explicitly catch duplicate-key exceptions from the insert path and convert them into clean HTTP `409 Conflict` responses.
+
+That means the race is still resolved by the database, but the API now reports it in a controlled, user-friendly way instead of surfacing a raw low-level DB error.
+
+### Fix 4: Decouple Audit Writes From Business Transactions
+
+**File:** `app/services/audit.py`
+
+Audit writes now use their own short-lived autocommit auth connection.
+
+That prevents a long-running request transaction from holding the audit chain hostage, and it also prevents audit contention from poisoning unrelated endpoints.
+
+### Fix 5: Make Test Logins Thread-Safe and Reusable
+
+**File:** `loadtest/helpers.py`
+
+The test helper now caches login cookies behind a lock and creates new `requests.Session()` objects from that cached cookie jar.
+
+This makes the load tests cleaner because they stress the endpoint under test, not `/auth/login`.
+
+### How We Test All of This
+
+- The atomicity test confirms there are no orphan Member rows
+- The race-condition tests confirm equipment issuing, registration, and member creation all behave correctly under concurrency
+- The final verification pass confirms the database is still consistent after the whole suite
+- After these fixes, the full `run_all.py` suite completed with all 11 tests passing
 
 ---
 
@@ -683,6 +764,7 @@ At the end, it generates `results/report.md` — a Markdown table summarizing al
 1. Make sure MySQL is running and the databases `olympia_auth` and `olympia_track` exist with data
 2. Make sure the FastAPI app is running (`uvicorn app.main:app`)
 3. Make sure the test users (admin, coach1, player1) exist in the database
+4. Make sure `API_CONTEXT_SECRET` is present in `Module_B/.env`, otherwise normal API writes may be mistaken for direct DB tampering by the MySQL triggers
 
 ### Install Dependencies
 
@@ -734,7 +816,7 @@ locust -f locustfile.py --host=http://localhost:8000
 
 3. **Run the ACID tests** — `python test_acid.py`
    - Show the atomicity test: "Duplicate username causes rollback, no orphan rows"
-   - Mention the bug you found and fixed
+   - Mention that the fix is now bigger than one line: rollback, API context tagging, and safer ID generation all work together
 
 4. **Run Locust** — `locust -f locustfile.py --host=http://localhost:8000`
    - Start with 10 users, ramp to 50
@@ -749,6 +831,8 @@ locust -f locustfile.py --host=http://localhost:8000
 ### Key Talking Points
 
 - "We found and fixed an atomicity bug in member creation"
+- "We found a hidden configuration bug too: without `API_CONTEXT_SECRET`, normal API writes were being treated like direct DB access by the tamper-detection triggers"
+- "We changed ID generation so retries see fresh committed IDs instead of stale snapshot values"
 - "FOR UPDATE correctly prevents equipment over-issuing under 20 concurrent threads"
 - "The UNIQUE constraint acts as a safety net for registration races"
 - "MySQL's isolation prevents dirty reads — uncommitted data is invisible"
@@ -766,8 +850,14 @@ locust -f locustfile.py --host=http://localhost:8000
 | Each thread gets its own session | Simulates independent users, not one user with multiple tabs |
 | Random test data names | Tests are idempotent — run them 100 times without cleanup |
 | 20 threads for races | High enough to trigger races, low enough to not crash the server |
-| 5 pool size, 35 threads for exhaustion | 7x oversubscription guarantees pool starvation |
+| 35-thread burst for exhaustion testing | Large enough to create contention and verify graceful recovery |
 | Barrier + Event for isolation test | Precise thread coordination to catch dirty reads |
-| `raise` instead of `return` for bug fix | One-line change that fixes atomicity by triggering rollback |
+| `raise` instead of `return` in member creation | Lets `get_cross_db()` roll back both databases on failure |
+| Normalize member gender before insert | Prevents invalid enum values from breaking member creation |
+| Require `API_CONTEXT_SECRET` | Prevents tamper triggers from auditing normal API writes |
+| Named lock + fresh autocommit ID read | Prevents stale-snapshot `MAX+1` collisions |
+| Catch duplicate-key races in registration | Returns clean `409 Conflict` responses instead of raw DB failures |
+| Separate audit connection | Keeps audit writes from blocking on business transactions |
+| Thread-safe cached login cookies | Keeps load tests focused on the real target endpoint |
 | Locust weights 1:3:6 | Realistic ratio of admin:coach:player traffic |
 | Separate verification pass | Defense in depth — even if tests pass, verify DB state independently |

@@ -7,6 +7,7 @@ from app.services.audit import write_audit_log
 from app.services.id_generation import insert_with_generated_id
 from app.services.validation import (
     humanize_db_error,
+    normalize_member_gender,
     normalize_contact_number,
     parse_iso_date,
     validate_member_name,
@@ -258,13 +259,14 @@ def create_member(
     ip = request.client.host if request.client else "unknown"
     _ensure_admin(current_user)
     if body.age <= 0:
-        return {"success": False, "message": "Age must be a positive number.", "data": body}
+        raise HTTPException(status_code=400, detail="Age must be a positive number.")
     try:
         member_name = validate_member_name(body.name)
         contact_number = normalize_contact_number(body.contact_number)
+        gender = normalize_member_gender(body.gender)
         join_date = parse_iso_date(body.join_date, "Join date")
     except ValueError as exc:
-        return {"success": False, "message": str(exc), "data": body}
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     member_id = body.member_id
     try:
         member_id = insert_with_generated_id(
@@ -284,7 +286,7 @@ def create_member(
                     body.age,
                     body.email,
                     contact_number,
-                    body.gender,
+                    gender,
                     body.role,
                     join_date.isoformat(),
                 ),
@@ -295,7 +297,7 @@ def create_member(
             cross_db, current_user["user_id"], current_user["username"],
             "INSERT", "Member", str(member_id), "FAILURE", {"error": str(e)}, ip,
         )
-        return {"success": False, "message": humanize_db_error(e), "data": body}
+        raise HTTPException(status_code=400, detail=humanize_db_error(e)) from e
     pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     try:
         cross_db.execute(
@@ -316,6 +318,7 @@ def create_member(
     body.member_id = member_id
     body.name = member_name
     body.contact_number = contact_number
+    body.gender = gender
     body.join_date = join_date.isoformat()
     return {"success": True, "message": "Member created", "data": {"member_id": member_id, "member": body.model_dump()}}
 

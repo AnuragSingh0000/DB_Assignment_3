@@ -2,21 +2,38 @@
 
 import random
 import string
+import threading
 import requests
 import mysql.connector
+from requests.cookies import cookiejar_from_dict
 from config import (
     BASE_URL, ADMIN_CREDS, COACH_CREDS, PLAYER_CREDS,
-    DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_AUTH, DB_TRACK,
+    DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_AUTH, DB_TRACK, REQUEST_TIMEOUT,
 )
+
+_AUTH_COOKIE_CACHE = {}
+_AUTH_COOKIE_LOCK = threading.Lock()
 
 
 # ── HTTP sessions ──────────────────────────────────────────────────────────
 
 def login_session(creds: dict) -> requests.Session:
-    """Return a requests.Session with auth cookies set."""
+    """Return a fresh session preloaded with authenticated cookies."""
+    cache_key = tuple(sorted(creds.items()))
+    cached_cookies = _AUTH_COOKIE_CACHE.get(cache_key)
+
+    if cached_cookies is None:
+        with _AUTH_COOKIE_LOCK:
+            cached_cookies = _AUTH_COOKIE_CACHE.get(cache_key)
+            if cached_cookies is None:
+                seed_session = requests.Session()
+                r = seed_session.post(f"{BASE_URL}/auth/login", json=creds, timeout=REQUEST_TIMEOUT)
+                r.raise_for_status()
+                cached_cookies = requests.utils.dict_from_cookiejar(seed_session.cookies)
+                _AUTH_COOKIE_CACHE[cache_key] = cached_cookies
+
     s = requests.Session()
-    r = s.post(f"{BASE_URL}/auth/login", json=creds)
-    r.raise_for_status()
+    s.cookies = cookiejar_from_dict(cached_cookies)
     return s
 
 
@@ -61,7 +78,7 @@ def create_test_equipment(session: requests.Session, total_qty: int = 5) -> int:
         "total_quantity": total_qty,
         "equipment_condition": "New",
     }
-    r = session.post(f"{BASE_URL}/api/equipment", json=payload)
+    r = session.post(f"{BASE_URL}/api/equipment", json=payload, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     return r.json()["data"]["equipment_id"]
 
@@ -74,7 +91,7 @@ def create_test_member_payload(role: str = "Player") -> dict:
         "age": 25,
         "email": f"test_{tag}@example.com",
         "contact_number": f"+1{random.randint(1000000000,9999999999)}",
-        "gender": "Male",
+        "gender": "M",
         "role": role,
         "join_date": "2025-01-01",
         "username": f"user_{tag}",
@@ -90,7 +107,7 @@ def create_test_tournament(session: requests.Session) -> int:
         "end_date": "2025-06-10",
         "status": "Upcoming",
     }
-    r = session.post(f"{BASE_URL}/api/tournaments", json=payload)
+    r = session.post(f"{BASE_URL}/api/tournaments", json=payload, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     return r.json()["data"]["tournament_id"]
 
@@ -103,13 +120,13 @@ def create_test_team(session: requests.Session, coach_member_id: int) -> int:
         "formed_date": "2025-01-01",
         "coach_id": coach_member_id,
     }
-    r = session.post(f"{BASE_URL}/api/teams", json=payload)
+    r = session.post(f"{BASE_URL}/api/teams", json=payload, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     return r.json()["data"]["team_id"]
 
 
 def get_coach_member_id(session: requests.Session) -> int:
     """Get the member_id of the currently logged-in coach."""
-    r = session.get(f"{BASE_URL}/auth/isAuth")
+    r = session.get(f"{BASE_URL}/auth/isAuth", timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     return r.json()["data"]["member_id"]

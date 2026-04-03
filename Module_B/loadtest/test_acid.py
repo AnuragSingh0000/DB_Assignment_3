@@ -10,6 +10,7 @@ from helpers import (
     get_coach_member_id, create_test_team,
 )
 from config import BASE_URL
+from progress import ProgressBar, print_phase_progress
 
 
 def _banner(title):
@@ -297,8 +298,11 @@ def test_isolation_valid_states():
         # Additional reads
         for i in range(5):
             futures.append(pool.submit(read_one, i + issue_count))
+        progress = ProgressBar(len(futures), "Issue/read ops")
         for f in as_completed(futures):
             f.result()  # propagate exceptions
+            progress.advance(detail=f"observed={len(observed_values)}")
+        progress.finish(detail=f"observed={len(observed_values)}")
 
     # Valid values: 0 to total_qty, integers only
     valid = all(isinstance(v, int) and 0 <= v <= total_qty for v in observed_values)
@@ -342,7 +346,7 @@ def test_durability():
 
     # Also verify via API
     r2 = admin.get(f"{BASE_URL}/api/members/{member_id}")
-    api_email = r2.json()["data"]["Email"] if r2.status_code == 200 else None
+    api_email = r2.json()["data"]["member"]["Email"] if r2.status_code == 200 else None
     api_match = (api_email == expected_email)
     print(f"  API query: email={api_email}")
 
@@ -370,7 +374,8 @@ def run_all():
         test_isolation_valid_states,
         test_durability,
     ]
-    for test_fn in tests:
+    for index, test_fn in enumerate(tests, start=1):
+        print_phase_progress(index, len(tests), test_fn.__name__)
         try:
             results.append(test_fn())
         except Exception as e:

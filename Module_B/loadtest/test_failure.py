@@ -11,6 +11,7 @@ from helpers import (
     get_coach_member_id, create_test_team,
 )
 from config import BASE_URL, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD
+from progress import ProgressBar, print_phase_progress
 import mysql.connector
 
 
@@ -77,6 +78,7 @@ def test_connection_kill():
     emails_attempted = []
     with ThreadPoolExecutor(max_workers=thread_count) as pool:
         futures = {pool.submit(create_member, i): i for i in range(thread_count)}
+        progress = ProgressBar(thread_count, "Member creations")
         for f in as_completed(futures):
             code, email = f.result()
             emails_attempted.append(email)
@@ -84,6 +86,8 @@ def test_connection_kill():
                 results["success"] += 1
             else:
                 results["fail"] += 1
+            progress.advance(detail=f"ok={results['success']} fail={results['fail']} killed={kill_count}")
+        progress.finish(detail=f"ok={results['success']} fail={results['fail']} killed={kill_count}")
 
     stop_killing.set()
     killer.join(timeout=5)
@@ -159,6 +163,7 @@ def test_pool_exhaustion():
 
     with ThreadPoolExecutor(max_workers=thread_count) as pool:
         futures = {pool.submit(issue_one, i): i for i in range(thread_count)}
+        progress = ProgressBar(thread_count, "Issue requests")
         for f in as_completed(futures):
             code, text = f.result()
             if code == 200:
@@ -168,6 +173,12 @@ def test_pool_exhaustion():
                 results["fail"] += 1
             else:
                 results["fail"] += 1
+            progress.advance(
+                detail=f"ok={results['success']} fail={results['fail']} pool={results['pool_error']}"
+            )
+        progress.finish(
+            detail=f"ok={results['success']} fail={results['fail']} pool={results['pool_error']}"
+        )
 
     print(f"  Success: {results['success']}, Failed: {results['fail']}, Pool errors: {results['pool_error']}")
 
@@ -260,7 +271,8 @@ def test_server_crash():
 def run_all():
     results = []
     tests = [test_connection_kill, test_pool_exhaustion, test_server_crash]
-    for test_fn in tests:
+    for index, test_fn in enumerate(tests, start=1):
+        print_phase_progress(index, len(tests), test_fn.__name__)
         try:
             results.append(test_fn())
         except Exception as e:

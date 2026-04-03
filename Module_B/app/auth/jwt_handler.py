@@ -26,6 +26,7 @@ def create_refresh_token(user_id: int) -> str:
         "type":    "refresh",
         "exp":     now + timedelta(hours=JWT_EXPIRY_HOURS),
         "iat":     now,
+        "jti":     str(uuid.uuid4()),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
 

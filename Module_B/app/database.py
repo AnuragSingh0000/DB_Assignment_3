@@ -4,16 +4,20 @@ import mysql.connector.pooling
 from app.config import DB_CONFIG_AUTH, DB_CONFIG_TRACK
 
 _api_secret = os.getenv("API_CONTEXT_SECRET")
+if not _api_secret:
+    raise RuntimeError(
+        "API_CONTEXT_SECRET is required so database tamper-detection triggers can recognize API writes."
+    )
 
 _auth_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="olympia_auth_pool",
-    pool_size=5,
+    pool_size=32,
     **DB_CONFIG_AUTH,
 )
 
 _track_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="olympia_track_pool",
-    pool_size=5,
+    pool_size=32,
     **DB_CONFIG_TRACK,
 )
 

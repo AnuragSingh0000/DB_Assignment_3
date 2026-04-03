@@ -23,12 +23,12 @@ def check_equipment_invariant() -> bool:
     """Issued qty must never exceed total qty for any equipment."""
     conn, cur = get_db("olympia_track")
     cur.execute("""
-        SELECT e.EquipmentID, e.Name, e.TotalQuantity,
+        SELECT e.EquipmentID, e.EquipmentName, e.TotalQuantity,
                COALESCE(SUM(ei.Quantity), 0) AS issued
         FROM Equipment e
         LEFT JOIN EquipmentIssue ei
                ON e.EquipmentID = ei.EquipmentID AND ei.ReturnDate IS NULL
-        GROUP BY e.EquipmentID, e.Name, e.TotalQuantity
+        GROUP BY e.EquipmentID, e.EquipmentName, e.TotalQuantity
         HAVING issued > e.TotalQuantity
     """)
     violations = cur.fetchall()

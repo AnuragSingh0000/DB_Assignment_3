@@ -12,6 +12,7 @@ from test_race_conditions import run_all as run_race_conditions
 from test_acid import run_all as run_acid
 from test_failure import run_all as run_failure
 from verify import run_all_checks
+from progress import ProgressBar
 
 
 def generate_report(rc_results, acid_results, fail_results, verify_results, elapsed):
@@ -108,6 +109,7 @@ def generate_report(rc_results, acid_results, fail_results, verify_results, elap
 
 def main():
     start = time.time()
+    phase_progress = ProgressBar(4, "Overall progress")
 
     print("\n" + "=" * 70)
     print("  OLYMPIA TRACK — Load Testing & Failure Simulation Suite")
@@ -116,18 +118,23 @@ def main():
     # 1. Race conditions
     print("\n\n>>> PHASE 1: Race Condition Tests <<<")
     rc_results = run_race_conditions()
+    phase_progress.advance(detail="race conditions complete")
 
     # 2. ACID tests
     print("\n\n>>> PHASE 2: ACID Property Tests <<<")
     acid_results = run_acid()
+    phase_progress.advance(detail="ACID checks complete")
 
     # 3. Failure simulation
     print("\n\n>>> PHASE 3: Failure Simulation <<<")
     fail_results = run_failure()
+    phase_progress.advance(detail="failure simulation complete")
 
     # 4. Post-test verification
     print("\n\n>>> PHASE 4: Post-Test Database Verification <<<")
     verify_results = run_all_checks()
+    phase_progress.advance(detail="verification complete")
+    phase_progress.finish(detail="suite complete")
 
     elapsed = time.time() - start
 

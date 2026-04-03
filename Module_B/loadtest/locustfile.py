@@ -9,6 +9,7 @@ Run:
 import random
 import string
 from locust import HttpUser, task, between, events
+from config import ADMIN_CREDS, COACH_CREDS, PLAYER_CREDS
 
 
 def _rand(n=6):
@@ -33,8 +34,8 @@ class _AuthMixin:
 class AdminUser(_AuthMixin, HttpUser):
     weight = 1
     wait_time = between(1, 3)
-    username = "admin"
-    password = "admin123"
+    username = ADMIN_CREDS["username"]
+    password = ADMIN_CREDS["password"]
 
     @task(5)
     def list_members(self):
@@ -75,8 +76,8 @@ class AdminUser(_AuthMixin, HttpUser):
 class CoachUser(_AuthMixin, HttpUser):
     weight = 3
     wait_time = between(1, 3)
-    username = "coach1"
-    password = "coach123"
+    username = COACH_CREDS["username"]
+    password = COACH_CREDS["password"]
 
     @task(5)
     def list_teams(self):
@@ -102,8 +103,8 @@ class CoachUser(_AuthMixin, HttpUser):
 class PlayerUser(_AuthMixin, HttpUser):
     weight = 6
     wait_time = between(1, 3)
-    username = "player1"
-    password = "player123"
+    username = PLAYER_CREDS["username"]
+    password = PLAYER_CREDS["password"]
 
     @task(5)
     def view_profile(self):

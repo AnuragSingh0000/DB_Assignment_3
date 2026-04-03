@@ -59,6 +59,21 @@ def validate_member_name(name: str) -> str:
     return normalized
 
 
+def normalize_member_gender(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    mapping = {
+        "M": "M",
+        "MALE": "M",
+        "F": "F",
+        "FEMALE": "F",
+        "O": "O",
+        "OTHER": "O",
+    }
+    if normalized not in mapping:
+        raise ValueError("Gender must be one of M, F, O, Male, Female, or Other.")
+    return mapping[normalized]
+
+
 def normalize_country_code(country_code: Optional[str]) -> str:
     if not isinstance(country_code, str):
         return DEFAULT_COUNTRY_CODE

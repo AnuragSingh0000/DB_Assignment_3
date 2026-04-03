@@ -8,11 +8,19 @@ from helpers import (
     create_test_equipment, create_test_member_payload,
     create_test_tournament, create_test_team, get_coach_member_id,
 )
-from config import BASE_URL, THREAD_COUNT, EQUIPMENT_QTY
+from config import BASE_URL, THREAD_COUNT, EQUIPMENT_QTY, REQUEST_TIMEOUT
+from progress import ProgressBar, print_phase_progress
 
 
 def _banner(title):
     print(f"\n{'='*60}\n  {title}\n{'='*60}")
+
+
+def _json_or_text(resp):
+    try:
+        return resp.json()
+    except ValueError:
+        return {"success": False, "raw_text": resp.text}
 
 
 # ── RC-1: Equipment Issue Race ─────────────────────────────────────────────
@@ -29,13 +37,18 @@ def test_equipment_issue_race():
 
     # Create a player member that the coach manages
     member_payload = create_test_member_payload("Player")
-    r = admin.post(f"{BASE_URL}/api/members", json=member_payload)
+    r = admin.post(f"{BASE_URL}/api/members", json=member_payload, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     player_mid = r.json()["data"]["member_id"]
 
     # Assign the player to a team under this coach
     team_id = create_test_team(admin, coach_mid)
-    admin.post(f"{BASE_URL}/api/teams/{team_id}/members", json={"member_id": player_mid, "role": "Player"})
+    r = admin.put(
+        f"{BASE_URL}/api/teams/{team_id}",
+        json={"members": [{"member_id": player_mid}]},
+        timeout=REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
 
     # Create equipment with limited stock
     equip_id = create_test_equipment(admin, total_qty=EQUIPMENT_QTY)
@@ -53,17 +66,20 @@ def test_equipment_issue_race():
             "issue_date": "2025-01-15",
             "quantity": 1,
         }
-        resp = s.post(f"{BASE_URL}/api/equipment/issue", json=payload)
-        return resp.status_code, resp.json()
+        resp = s.post(f"{BASE_URL}/api/equipment/issue", json=payload, timeout=REQUEST_TIMEOUT)
+        return resp.status_code, _json_or_text(resp)
 
     with ThreadPoolExecutor(max_workers=THREAD_COUNT) as pool:
         futures = {pool.submit(issue_one, i): i for i in range(THREAD_COUNT)}
+        progress = ProgressBar(THREAD_COUNT, "Issue requests")
         for f in as_completed(futures):
             code, body = f.result()
             if code == 200 and body.get("success"):
                 results["success"] += 1
             else:
                 results["fail"] += 1
+            progress.advance(detail=f"ok={results['success']} fail={results['fail']}")
+        progress.finish(detail=f"ok={results['success']} fail={results['fail']}")
 
     # DB verification
     conn, cur = get_db("olympia_track")
@@ -116,17 +132,21 @@ def test_registration_race():
         s = coach_session()
         resp = s.post(
             f"{BASE_URL}/api/registrations/tournament/{tournament_id}/team/{team_id}",
+            timeout=REQUEST_TIMEOUT,
         )
-        return resp.status_code, resp.json()
+        return resp.status_code, _json_or_text(resp)
 
     with ThreadPoolExecutor(max_workers=thread_count) as pool:
         futures = {pool.submit(register_one, i): i for i in range(thread_count)}
+        progress = ProgressBar(thread_count, "Registration reqs")
         for f in as_completed(futures):
             code, body = f.result()
             if code == 200 and body.get("success"):
                 results["success"] += 1
             else:
                 results["fail"] += 1
+            progress.advance(detail=f"ok={results['success']} fail={results['fail']}")
+        progress.finish(detail=f"ok={results['success']} fail={results['fail']}")
 
     # DB verification
     conn, cur = get_db("olympia_track")
@@ -167,11 +187,12 @@ def test_id_generation_race():
     def create_one(tid):
         s = admin_session()
         payload = create_test_member_payload("Player")
-        resp = s.post(f"{BASE_URL}/api/members", json=payload)
-        return resp.status_code, resp.json()
+        resp = s.post(f"{BASE_URL}/api/members", json=payload, timeout=REQUEST_TIMEOUT)
+        return resp.status_code, _json_or_text(resp)
 
     with ThreadPoolExecutor(max_workers=thread_count) as pool:
         futures = {pool.submit(create_one, i): i for i in range(thread_count)}
+        progress = ProgressBar(thread_count, "Member creations")
         for f in as_completed(futures):
             code, body = f.result()
             if code == 200 and body.get("success"):
@@ -181,6 +202,8 @@ def test_id_generation_race():
                     results["member_ids"].append(mid)
             else:
                 results["fail"] += 1
+            progress.advance(detail=f"ok={results['success']} fail={results['fail']}")
+        progress.finish(detail=f"ok={results['success']} fail={results['fail']}")
 
     # DB verification: no duplicate MemberIDs
     conn, cur = get_db("olympia_track")
@@ -213,7 +236,9 @@ def test_id_generation_race():
 
 def run_all():
     results = []
-    for test_fn in [test_equipment_issue_race, test_registration_race, test_id_generation_race]:
+    tests = [test_equipment_issue_race, test_registration_race, test_id_generation_race]
+    for index, test_fn in enumerate(tests, start=1):
+        print_phase_progress(index, len(tests), test_fn.__name__)
         try:
             results.append(test_fn())
         except Exception as e:

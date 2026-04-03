@@ -4,6 +4,11 @@ from app.database import get_auth_db, get_track_db
 from app.services.audit import write_audit_log
 from app.services.id_generation import insert_with_generated_id
 
+
+def _is_duplicate_key_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "duplicate" in message and ("primary" in message or "unique" in message or "for key" in message)
+
 router = APIRouter()
 
 
@@ -34,15 +39,20 @@ def register_team_for_tournament(
     )
     if track_db.fetchone():
         raise HTTPException(status_code=409, detail="Team is already registered for this tournament.")
-    next_id = insert_with_generated_id(
-        track_db,
-        requested_id=None,
-        next_id_sql="SELECT COALESCE(MAX(RegID), 0) + 1 AS nid FROM TournamentRegistration",
-        insert_fn=lambda reg_id: track_db.execute(
-            "INSERT INTO TournamentRegistration (RegID, TournamentID, TeamID) VALUES (%s,%s,%s)",
-            (reg_id, tournament_id, team_id),
-        ),
-    )
+    try:
+        next_id = insert_with_generated_id(
+            track_db,
+            requested_id=None,
+            next_id_sql="SELECT COALESCE(MAX(RegID), 0) + 1 AS nid FROM TournamentRegistration",
+            insert_fn=lambda reg_id: track_db.execute(
+                "INSERT INTO TournamentRegistration (RegID, TournamentID, TeamID) VALUES (%s,%s,%s)",
+                (reg_id, tournament_id, team_id),
+            ),
+        )
+    except Exception as exc:
+        if _is_duplicate_key_error(exc):
+            raise HTTPException(status_code=409, detail="Team is already registered for this tournament.") from exc
+        raise
     write_audit_log(auth_db, current_user["user_id"], current_user["username"],
                     "INSERT", "TournamentRegistration", str(next_id), "SUCCESS",
                     {"tournament_id": tournament_id, "team_id": team_id}, ip)
@@ -126,15 +136,20 @@ def add_team_to_event(
     )
     if track_db.fetchone():
         raise HTTPException(status_code=409, detail="Team is already participating in this event.")
-    next_id = insert_with_generated_id(
-        track_db,
-        requested_id=None,
-        next_id_sql="SELECT COALESCE(MAX(ParticipationID), 0) + 1 AS nid FROM Participation",
-        insert_fn=lambda participation_id: track_db.execute(
-            "INSERT INTO Participation (ParticipationID, TeamID, EventID) VALUES (%s,%s,%s)",
-            (participation_id, team_id, event_id),
-        ),
-    )
+    try:
+        next_id = insert_with_generated_id(
+            track_db,
+            requested_id=None,
+            next_id_sql="SELECT COALESCE(MAX(ParticipationID), 0) + 1 AS nid FROM Participation",
+            insert_fn=lambda participation_id: track_db.execute(
+                "INSERT INTO Participation (ParticipationID, TeamID, EventID) VALUES (%s,%s,%s)",
+                (participation_id, team_id, event_id),
+            ),
+        )
+    except Exception as exc:
+        if _is_duplicate_key_error(exc):
+            raise HTTPException(status_code=409, detail="Team is already participating in this event.") from exc
+        raise
     write_audit_log(auth_db, current_user["user_id"], current_user["username"],
                     "INSERT", "Participation", str(next_id), "SUCCESS",
                     {"event_id": event_id, "team_id": team_id}, ip)
