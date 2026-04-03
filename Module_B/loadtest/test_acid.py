@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from helpers import (
     admin_session, coach_session, get_db, close_db,
     create_test_equipment, create_test_member_payload,
-    get_coach_member_id, create_test_team,
+    get_coach_member_id, create_test_team, add_member_to_team,
 )
 from config import BASE_URL
 from progress import ProgressBar, print_phase_progress
@@ -150,7 +150,7 @@ def test_isolation_no_dirty_reads():
     player_mid = r.json()["data"]["member_id"]
 
     team_id = create_test_team(admin, coach_mid)
-    admin.post(f"{BASE_URL}/api/teams/{team_id}/members", json={"member_id": player_mid, "role": "Player"})
+    add_member_to_team(admin, team_id, player_mid)
 
     equip_id = create_test_equipment(admin, total_qty=10)
 
@@ -265,13 +265,14 @@ def test_isolation_valid_states():
     player_mid = r.json()["data"]["member_id"]
 
     team_id = create_test_team(admin, coach_mid)
-    admin.post(f"{BASE_URL}/api/teams/{team_id}/members", json={"member_id": player_mid, "role": "Player"})
+    add_member_to_team(admin, team_id, player_mid)
 
     total_qty = 10
     equip_id = create_test_equipment(admin, total_qty=total_qty)
 
     observed_values = []
     issue_count = 8
+    success_count = 0
 
     def issue_one(i):
         s = coach_session()
@@ -300,14 +301,29 @@ def test_isolation_valid_states():
             futures.append(pool.submit(read_one, i + issue_count))
         progress = ProgressBar(len(futures), "Issue/read ops")
         for f in as_completed(futures):
-            f.result()  # propagate exceptions
+            result = f.result()
+            if result is not None and result.status_code == 200:
+                success_count += 1
             progress.advance(detail=f"observed={len(observed_values)}")
         progress.finish(detail=f"observed={len(observed_values)}")
 
-    # Valid values: 0 to total_qty, integers only
-    valid = all(isinstance(v, int) and 0 <= v <= total_qty for v in observed_values)
+    r = coach.get(f"{BASE_URL}/api/equipment/{equip_id}")
+    r.raise_for_status()
+    final_available = r.json()["data"]["AvailableQuantity"]
+
+    # Valid values: 0 to total_qty, integers only, and writes must really happen.
+    valid_bounds = all(isinstance(v, int) and 0 <= v <= total_qty for v in observed_values)
+    expected_final = total_qty - success_count
+    valid = (
+        success_count > 0
+        and len(observed_values) > 0
+        and valid_bounds
+        and final_available == expected_final
+    )
     print(f"  Observed availability values: {sorted(set(observed_values))}")
-    print(f"  All values valid (0..{total_qty}): {valid}")
+    print(f"  Successful issues: {success_count}")
+    print(f"  Final availability: {final_available} (expected {expected_final})")
+    print(f"  All observed values valid (0..{total_qty}): {valid_bounds}")
 
     status = "PASS" if valid else "FAIL"
     print(f"  [{status}] Isolation: Valid States Only")
@@ -315,6 +331,8 @@ def test_isolation_valid_states():
         "test": "Isolation: Valid States Only",
         "passed": valid,
         "observed_values": sorted(set(observed_values)),
+        "success_count": success_count,
+        "final_available": final_available,
     }
 
 

@@ -49,6 +49,11 @@ def player_session() -> requests.Session:
     return login_session(PLAYER_CREDS)
 
 
+def clear_session_cache() -> None:
+    with _AUTH_COOKIE_LOCK:
+        _AUTH_COOKIE_CACHE.clear()
+
+
 # ── Database connections ───────────────────────────────────────────────────
 
 def get_db(database: str = DB_TRACK):
@@ -123,6 +128,39 @@ def create_test_team(session: requests.Session, coach_member_id: int) -> int:
     r = session.post(f"{BASE_URL}/api/teams", json=payload, timeout=REQUEST_TIMEOUT)
     r.raise_for_status()
     return r.json()["data"]["team_id"]
+
+
+def add_member_to_team(
+    session: requests.Session,
+    team_id: int,
+    member_id: int,
+    *,
+    position: str | None = None,
+) -> None:
+    """Add a member using the real team update API."""
+    r = session.get(f"{BASE_URL}/api/teams/{team_id}", timeout=REQUEST_TIMEOUT)
+    r.raise_for_status()
+    roster = r.json()["data"]["roster"]
+    members = []
+    already_present = False
+    for row in roster:
+        existing_member_id = row["MemberID"]
+        if existing_member_id == member_id:
+            already_present = True
+        members.append(
+            {
+                "member_id": existing_member_id,
+                "position": row.get("Position"),
+            }
+        )
+    if not already_present:
+        members.append({"member_id": member_id, "position": position})
+    update = session.put(
+        f"{BASE_URL}/api/teams/{team_id}",
+        json={"members": members},
+        timeout=REQUEST_TIMEOUT,
+    )
+    update.raise_for_status()
 
 
 def get_coach_member_id(session: requests.Session) -> int:

@@ -2,16 +2,15 @@
 
 import time
 import threading
-import subprocess
-import signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from helpers import (
     admin_session, coach_session, get_db, close_db,
     create_test_equipment, create_test_member_payload,
-    get_coach_member_id, create_test_team,
+    get_coach_member_id, create_test_team, add_member_to_team,
 )
-from config import BASE_URL, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD
+from config import BASE_URL, DB_HOST, DB_PORT, DB_POOL_SIZE, DB_USER, DB_PASSWORD, REQUEST_TIMEOUT
 from progress import ProgressBar, print_phase_progress
+from harness import get_active_harness
 import mysql.connector
 
 
@@ -124,8 +123,7 @@ def test_connection_kill():
 # ── FS-2: Pool Exhaustion ─────────────────────────────────────────────────
 
 def test_pool_exhaustion():
-    """Send 30+ concurrent requests to exhaust the 5-connection pool.
-    Some requests should fail but no data corruption.
+    """Hold a row lock so blocked requests consume the small app pool under pressure.
     """
     _banner("FS-2: Pool Exhaustion")
 
@@ -140,12 +138,34 @@ def test_pool_exhaustion():
     player_mid = r.json()["data"]["member_id"]
 
     team_id = create_test_team(admin, coach_mid)
-    admin.post(f"{BASE_URL}/api/teams/{team_id}/members", json={"member_id": player_mid, "role": "Player"})
+    add_member_to_team(admin, team_id, player_mid)
 
-    thread_count = 35
-    print(f"  Sending {thread_count} concurrent equipment issue requests (pool size=5)...")
+    thread_count = max(DB_POOL_SIZE * 4, DB_POOL_SIZE + 8)
+    print(f"  Sending {thread_count} concurrent equipment issue requests (pool size={DB_POOL_SIZE})...")
 
     results = {"success": 0, "fail": 0, "pool_error": 0}
+    lock_conn = mysql.connector.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database="olympia_track",
+    )
+    lock_conn.autocommit = False
+    lock_cur = lock_conn.cursor(dictionary=True)
+    lock_cur.execute(
+        """
+        SELECT e.TotalQuantity, COALESCE(SUM(ei.Quantity), 0) AS issued
+        FROM Equipment e
+        LEFT JOIN EquipmentIssue ei
+               ON e.EquipmentID = ei.EquipmentID AND ei.ReturnDate IS NULL
+        WHERE e.EquipmentID = %s
+        GROUP BY e.TotalQuantity
+        FOR UPDATE
+        """,
+        (equip_id,),
+    )
+    lock_cur.fetchone()
 
     def issue_one(i):
         s = coach_session()
@@ -156,29 +176,47 @@ def test_pool_exhaustion():
             "quantity": 1,
         }
         try:
-            resp = s.post(f"{BASE_URL}/api/equipment/issue", json=payload)
+            resp = s.post(
+                f"{BASE_URL}/api/equipment/issue",
+                json=payload,
+                timeout=max(REQUEST_TIMEOUT, 10),
+            )
             return resp.status_code, resp.text
         except Exception as e:
             return 0, str(e)
 
-    with ThreadPoolExecutor(max_workers=thread_count) as pool:
-        futures = {pool.submit(issue_one, i): i for i in range(thread_count)}
-        progress = ProgressBar(thread_count, "Issue requests")
-        for f in as_completed(futures):
-            code, text = f.result()
-            if code == 200:
-                results["success"] += 1
-            elif code == 0 or "pool" in text.lower() or "connection" in text.lower():
-                results["pool_error"] += 1
-                results["fail"] += 1
-            else:
-                results["fail"] += 1
-            progress.advance(
+    try:
+        with ThreadPoolExecutor(max_workers=thread_count) as pool:
+            futures = {pool.submit(issue_one, i): i for i in range(thread_count)}
+            time.sleep(3)
+            lock_conn.commit()
+            progress = ProgressBar(thread_count, "Issue requests")
+            for f in as_completed(futures):
+                code, text = f.result()
+                if code == 200:
+                    results["success"] += 1
+                elif (
+                    code == 0
+                    or code >= 500
+                    or "pool" in text.lower()
+                    or "connection" in text.lower()
+                    or "timeout" in text.lower()
+                ):
+                    results["pool_error"] += 1
+                    results["fail"] += 1
+                else:
+                    results["fail"] += 1
+                progress.advance(
+                    detail=f"ok={results['success']} fail={results['fail']} pool={results['pool_error']}"
+                )
+            progress.finish(
                 detail=f"ok={results['success']} fail={results['fail']} pool={results['pool_error']}"
             )
-        progress.finish(
-            detail=f"ok={results['success']} fail={results['fail']} pool={results['pool_error']}"
-        )
+    finally:
+        try:
+            lock_cur.close()
+        finally:
+            lock_conn.close()
 
     print(f"  Success: {results['success']}, Failed: {results['fail']}, Pool errors: {results['pool_error']}")
 
@@ -203,7 +241,13 @@ def test_pool_exhaustion():
     no_corruption = issued <= total
     print(f"  Issued: {issued}, Total: {total}, Invariant: {'OK' if no_corruption else 'VIOLATED'}")
 
-    passed = recovered and no_corruption
+    pressure_observed = (
+        results["pool_error"] > 0
+        or (results["fail"] > 0 and results["success"] <= DB_POOL_SIZE)
+    )
+    print(f"  Pressure observed: {'YES' if pressure_observed else 'NO'}")
+
+    passed = recovered and no_corruption and pressure_observed
     status = "PASS" if passed else "FAIL"
     print(f"  [{status}] FS-2: Pool Exhaustion")
     return {
@@ -218,50 +262,123 @@ def test_pool_exhaustion():
     }
 
 
-# ── FS-3: Server Crash (simulated via restart) ────────────────────────────
+# ── FS-3: Full Stack Restart Verification ─────────────────────────────────
 
-def test_server_crash():
-    """Verify equipment invariants hold after server restart.
-    We verify invariants, restart the API, then verify again.
-    """
-    _banner("FS-3: Server Crash Simulation")
+def test_full_stack_restart():
+    """Restart the API and MySQL, then verify committed data persists and interrupted work does not."""
+    _banner("FS-3: Full Stack Restart Verification")
+    harness = get_active_harness()
+    if harness is None:
+        raise RuntimeError("Managed harness is required for full-stack restart verification.")
 
-    # Pre-crash verification
-    conn, cur = get_db("olympia_track")
-    cur.execute("""
-        SELECT e.EquipmentID, e.TotalQuantity,
-               COALESCE(SUM(ei.Quantity),0) AS issued
+    admin = admin_session()
+    coach = coach_session()
+    coach_mid = get_coach_member_id(coach)
+
+    committed_payload = create_test_member_payload("Player")
+    committed_resp = admin.post(f"{BASE_URL}/api/members", json=committed_payload, timeout=REQUEST_TIMEOUT)
+    committed_resp.raise_for_status()
+    committed_member_id = committed_resp.json()["data"]["member_id"]
+    print(f"  Committed member created: ID={committed_member_id}")
+
+    blocked_payload = create_test_member_payload("Player")
+    blocked_resp = admin.post(f"{BASE_URL}/api/members", json=blocked_payload, timeout=REQUEST_TIMEOUT)
+    blocked_resp.raise_for_status()
+    blocked_member_id = blocked_resp.json()["data"]["member_id"]
+    team_id = create_test_team(admin, coach_mid)
+    add_member_to_team(admin, team_id, blocked_member_id)
+    equip_id = create_test_equipment(admin, total_qty=1)
+
+    lock_conn = mysql.connector.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database="olympia_track",
+    )
+    lock_conn.autocommit = False
+    lock_cur = lock_conn.cursor(dictionary=True)
+    lock_cur.execute(
+        """
+        SELECT e.TotalQuantity, COALESCE(SUM(ei.Quantity), 0) AS issued
         FROM Equipment e
         LEFT JOIN EquipmentIssue ei
                ON e.EquipmentID = ei.EquipmentID AND ei.ReturnDate IS NULL
-        GROUP BY e.EquipmentID, e.TotalQuantity
-        HAVING issued > e.TotalQuantity
-    """)
-    pre_violations = cur.fetchall()
-    close_db(conn, cur)
-    print(f"  Pre-crash invariant violations: {len(pre_violations)}")
+        WHERE e.EquipmentID = %s
+        GROUP BY e.TotalQuantity
+        FOR UPDATE
+        """,
+        (equip_id,),
+    )
+    lock_cur.fetchone()
 
-    # Since we can't safely kill/restart the server in all environments,
-    # we simulate by verifying data consistency via direct DB access
-    # (data survives regardless of server state because MySQL is durable)
+    request_result = {}
+
+    def interrupted_issue():
+        session = coach_session()
+        payload = {
+            "equipment_id": equip_id,
+            "member_id": blocked_member_id,
+            "issue_date": "2025-01-15",
+            "quantity": 1,
+        }
+        try:
+            response = session.post(
+                f"{BASE_URL}/api/equipment/issue",
+                json=payload,
+                timeout=max(REQUEST_TIMEOUT, 10),
+            )
+            request_result["status_code"] = response.status_code
+            request_result["body"] = response.text
+        except Exception as exc:
+            request_result["error"] = str(exc)
+
+    thread = threading.Thread(target=interrupted_issue, daemon=True)
+    thread.start()
+    time.sleep(2)
+
+    try:
+        harness.restart_stack()
+    finally:
+        try:
+            lock_cur.close()
+        except Exception:
+            pass
+        try:
+            lock_conn.close()
+        except Exception:
+            pass
+
+    thread.join(timeout=max(REQUEST_TIMEOUT, 10))
+
+    verify_admin = admin_session()
+    verify_member = verify_admin.get(f"{BASE_URL}/api/members/{committed_member_id}", timeout=REQUEST_TIMEOUT)
+    verify_member.raise_for_status()
+    committed_email = verify_member.json()["data"]["member"]["Email"]
+    committed_persisted = committed_email == committed_payload["email"]
+
     conn, cur = get_db("olympia_track")
-    cur.execute("SELECT COUNT(*) AS cnt FROM Equipment")
-    equip_count = cur.fetchone()["cnt"]
-    cur.execute("SELECT COUNT(*) AS cnt FROM EquipmentIssue")
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM EquipmentIssue WHERE EquipmentID=%s AND MemberID=%s",
+        (equip_id, blocked_member_id),
+    )
     issue_count = cur.fetchone()["cnt"]
     close_db(conn, cur)
+    interrupted_failed = request_result.get("status_code") != 200
+    no_partial_state = issue_count == 0
 
-    print(f"  Equipment rows: {equip_count}, Issue rows: {issue_count}")
-    print(f"  MySQL durability: all committed data persists regardless of server state")
+    print(f"  Interrupted request result: {request_result}")
+    print(f"  Committed member persisted: {'YES' if committed_persisted else 'NO'}")
+    print(f"  Interrupted issue rows after restart: {issue_count}")
 
-    passed = len(pre_violations) == 0
+    passed = committed_persisted and interrupted_failed and no_partial_state
     status = "PASS" if passed else "FAIL"
-    print(f"  [{status}] FS-3: Server Crash Simulation")
+    print(f"  [{status}] FS-3: Full Stack Restart Verification")
     return {
-        "test": "FS-3: Server Crash Simulation",
+        "test": "FS-3: Full Stack Restart Verification",
         "passed": passed,
-        "pre_violations": len(pre_violations),
-        "equipment_count": equip_count,
+        "committed_member_id": committed_member_id,
+        "interrupted_request": request_result,
         "issue_count": issue_count,
     }
 
@@ -270,7 +387,7 @@ def test_server_crash():
 
 def run_all():
     results = []
-    tests = [test_connection_kill, test_pool_exhaustion, test_server_crash]
+    tests = [test_connection_kill, test_pool_exhaustion, test_full_stack_restart]
     for index, test_fn in enumerate(tests, start=1):
         print_phase_progress(index, len(tests), test_fn.__name__)
         try:

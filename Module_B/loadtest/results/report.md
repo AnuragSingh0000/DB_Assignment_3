@@ -1,15 +1,15 @@
 # Load Test & Failure Simulation Report
 
-**Generated:** 2026-04-03 23:30:54
-**Total Duration:** 11.8s
+**Generated:** 2026-04-04 00:10:53
+**Total Duration:** 159.3s
 
 ## 1. Race Condition Tests
 
 | Test | Passed | Details |
 |------|--------|---------|
-| RC-1: Equipment Issue Race | PASS | success=5, fail=15, db_issued=5 |
-| RC-2: Tournament Registration Race | PASS | success=1, fail=9, db_count=1 |
-| RC-3: Concurrent ID Generation | PASS | success=20, fail=0, duplicates=0 |
+| RC-1: Equipment Issue Race | PASS | success_count=5, fail_count=15, db_issued=5 |
+| RC-2: Tournament Registration Race | PASS | success_count=1, fail_count=9, db_count=1 |
+| RC-3: Concurrent ID Generation | PASS | success_count=10, fail_count=10, duplicates=0 |
 
 ## 2. ACID Verification
 
@@ -18,18 +18,24 @@
 | Atomicity | Atomicity: Cross-DB Member Creation | PASS | orphan=no |
 | Consistency | Consistency: Invariant Checks | PASS | {'equipment_qty': True, 'no_dup_registrations': True, 'no_negatives': True} |
 | Isolation | Isolation: No Dirty Reads | PASS | reads_before_commit=[10] |
-| Isolation | Isolation: Valid States Only | PASS |  |
+| Isolation | Isolation: Valid States Only | PASS | success_count=8, final_available=2 |
 | Durability | Durability: Committed Data Persistence | PASS |  |
 
 ## 3. Failure Simulation
 
 | Test | Passed | Details |
 |------|--------|---------|
-| FS-1: Connection Kill | PASS | killed=15, orphans=0 |
-| FS-2: Pool Exhaustion | PASS | pool_errors=0, recovered=True |
-| FS-3: Server Crash Simulation | PASS |  |
+| FS-1: Connection Kill | PASS | connections_killed=4, orphans=0 |
+| FS-2: Pool Exhaustion | PASS | pool_errors=15, recovered=True |
+| FS-3: Full Stack Restart Verification | PASS | issue_count=0 |
 
-## 4. Database Consistency Report
+## 4. Stress Test
+
+| Test | Passed | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |
+|------|--------|----------|--------------|-----------|----------|-----|
+| ST-1: Automated Locust Stress Test | PASS | 5408 | 0.3% | 71.13 | 210.0 | 45.07 |
+
+## 5. Database Consistency Report
 
 | Check | Result |
 |-------|--------|
@@ -40,8 +46,19 @@
 | no_negative_quantities | PASS |
 | no_orphan_members | PASS |
 
+## 6. Requirement Mapping
+
+| Assignment Requirement | Evidence | Result |
+|------------------------|----------|--------|
+| Concurrent usage safety | RC-1: Equipment Issue Race | PASS |
+| Race condition testing | RC-2: Tournament Registration Race | PASS |
+| Atomicity / rollback | Atomicity: Cross-DB Member Creation | PASS |
+| Isolation | Isolation: No Dirty Reads | PASS |
+| Durability after restart | FS-3: Full Stack Restart Verification | PASS |
+| Stress testing under load | ST-1: Automated Locust Stress Test | PASS |
+
 ## Summary
 
-- **Test Scenarios:** 11/11 passed
+- **Test Scenarios:** 12/12 passed
 - **DB Checks:** 6/6 passed
-- **Duration:** 11.8s
+- **Duration:** 159.3s

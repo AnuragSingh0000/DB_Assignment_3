@@ -2,6 +2,8 @@
 
 > This document explains **everything** we built, **why** we built it, and **what each piece of code actually does** — written for someone who has never done stress testing or concurrency testing before.
 
+> **Implementation update:** the current verification flow now starts its own FastAPI server on `TEST_API_PORT` (default `8001`), keeps the normal DB pool size for race/ACID phases, switches to `FAILURE_DB_POOL_SIZE` (default `5`) only for the failure-simulation phase, restores the normal pool before the Locust stress phase, performs a real API + MySQL restart using `TEST_DB_RESTART_CMD`, and runs a bounded headless Locust phase with machine-readable metrics.
+
 ---
 
 ## Table of Contents
@@ -57,7 +59,7 @@ ACID is a set of four guarantees that databases provide to keep your data safe:
 
 ### What is a Connection Pool?
 
-Opening a database connection is expensive (like dialing a phone number). A **connection pool** keeps a fixed number of connections open and reuses them. In the current code, the app uses **32 pooled connections per database** (`olympia_auth` and `olympia_track`). If enough requests arrive at once, later requests still have to wait for a free connection or fail under pressure.
+Opening a database connection is expensive (like dialing a phone number). A **connection pool** keeps a fixed number of connections open and reuses them. In the current code, the normal pool size is configurable through `DB_POOL_SIZE`; normal app usage defaults to **32 pooled connections per database**. The failure-simulation phase can temporarily restart the API with `FAILURE_DB_POOL_SIZE` (default **5**) to make contention deterministic, and the harness restores the normal pool before the Locust stress phase.
 
 ### What is Locust?
 
@@ -95,7 +97,7 @@ A **thread** is a lightweight unit of execution. When we say "20 threads," think
 
 - **Tamper-detection triggers:** Normal API writes are supposed to set a special `@api_context` session variable so MySQL can distinguish "real API traffic" from suspicious direct SQL writes.
 
-- **Connection pool:** The current code uses 32 pooled connections per database. Our failure tests still deliberately oversubscribe the system to study contention, recovery, and graceful degradation.
+- **Connection pool:** The app reads `DB_POOL_SIZE` from the environment. The managed harness uses the normal pool for race/ACID checks, restarts the API on a smaller pool for deterministic failure verification, and then restores the normal pool before the Locust stress phase.
 
 ---
 
@@ -105,7 +107,7 @@ Before writing tests, we audited the application code and found these issues:
 
 ### Bug 1: Atomicity Violation in Member Creation (CRITICAL)
 
-**File:** `app/routers/members.py`, lines 305-310
+**File:** `app/routers/members.py`
 
 **The problem:** When creating a member, the app does TWO inserts:
 1. Insert a `Member` row into `olympia_track` 
@@ -178,7 +180,7 @@ This is why we saw duplicate-key errors and timeouts in places that should have 
 
 ### Weakness 4: Registration Uses Check-Then-Insert Without Locks
 
-**File:** `app/routers/registration.py`, lines 31-36
+**File:** `app/routers/registration.py`
 
 ```python
 # Step 1: Check if already registered
@@ -194,7 +196,7 @@ Between Step 1 and Step 2, another thread could also pass Step 1 (because neithe
 
 ### Strength: Equipment Issue Uses FOR UPDATE (Correct!)
 
-**File:** `app/routers/equipment.py`, lines 322-331
+**File:** `app/routers/equipment.py`
 
 ```sql
 SELECT e.TotalQuantity, COALESCE(SUM(ei.Quantity), 0) AS issued
@@ -215,17 +217,24 @@ The `FOR UPDATE` lock means: "While I'm checking how much equipment is available
 Module_B/loadtest/
 |
 |-- config.py                  # Settings: URLs, passwords, DB connection info
+|-- harness.py                 # Starts/stops the dedicated FastAPI server + restart helpers
 |-- helpers.py                 # Reusable functions: login, create test data, DB access
+|-- progress.py                # Small progress-bar helper for long-running phases
 |-- verify.py                  # 6 database integrity checks (run after tests)
 |
 |-- test_race_conditions.py    # 3 tests: equipment race, registration race, ID race
 |-- test_acid.py               # 5 tests: atomicity, consistency, isolation (x2), durability
-|-- test_failure.py            # 3 tests: connection kill, pool exhaustion, crash sim
+|-- test_failure.py            # 3 tests: connection kill, pool exhaustion, full-stack restart
 |-- locustfile.py              # Stress test: simulates Admin/Coach/Player traffic
+|-- test_stress.py             # Headless Locust runner + metric extraction
 |
 |-- run_all.py                 # Runs everything in order, generates report.md
 |-- results/                   # Output directory for the report
 ```
+
+Outside `loadtest/`, two companion docs were also added/updated:
+- `Module_B/API_ENDPOINTS.md` — endpoint-by-endpoint reference for the app
+- `Module_B/TESTING_GUIDE.md` — manual demo steps plus the automated Module B verification flow
 
 ---
 
@@ -236,21 +245,40 @@ Module_B/loadtest/
 This file stores all the settings in one place so every other file can import them:
 
 ```python
-BASE_URL = "http://localhost:8000"       # Where the FastAPI app is running
+BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8000")
+TEST_API_PORT = _env_int("TEST_API_PORT", 8001)
 
-ADMIN_CREDS  = {"username": "amit_admin",   "password": "password123"}
-COACH_CREDS  = {"username": "sunita_coach", "password": "password123"}
-PLAYER_CREDS = {"username": "meera_player", "password": "password123"}
+ADMIN_CREDS  = {"username": os.getenv("ADMIN_USERNAME",  "amit_admin"),   "password": os.getenv("ADMIN_PASSWORD",  "password123")}
+COACH_CREDS  = {"username": os.getenv("COACH_USERNAME",  "sunita_coach"), "password": os.getenv("COACH_PASSWORD",  "password123")}
+PLAYER_CREDS = {"username": os.getenv("PLAYER_USERNAME", "meera_player"), "password": os.getenv("PLAYER_PASSWORD", "password123")}
 
-THREAD_COUNT  = 20      # How many concurrent threads for race tests
-EQUIPMENT_QTY = 5       # Total equipment quantity for the race test
-REQUEST_TIMEOUT = 15    # Per-request timeout so hangs show up clearly
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = _env_int("DB_PORT", 3306)
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+
+DB_POOL_SIZE = _env_int("DB_POOL_SIZE", 32)
+FAILURE_DB_POOL_SIZE = _env_int("FAILURE_DB_POOL_SIZE", 5)
+THREAD_COUNT = 20
+EQUIPMENT_QTY = 5
+REGISTRATION_DUP = 10
+REQUEST_TIMEOUT = _env_int("REQUEST_TIMEOUT", 15)
+TEST_DB_RESTART_CMD = os.getenv("TEST_DB_RESTART_CMD", "")
+TEST_DB_HEALTHCHECK_CMD = os.getenv(..., _default_db_healthcheck(...))
+LOCUST_USERS = _env_int("LOCUST_USERS", 100)
+LOCUST_SPAWN_RATE = _env_int("LOCUST_SPAWN_RATE", 20)
+LOCUST_DURATION = os.getenv("LOCUST_DURATION", "2m")
+LOCUST_MAX_FAILURE_RATE = float(os.getenv("LOCUST_MAX_FAILURE_RATE", "5"))
+LOCUST_MAX_P95_MS = float(os.getenv("LOCUST_MAX_P95_MS", "2000"))
 ```
 
 **Why these values?** 
 - `THREAD_COUNT=20` with `EQUIPMENT_QTY=5` means 20 threads fight over 5 items. This creates a 4:1 oversubscription — extreme enough to trigger race conditions if locks are broken, but not so extreme that the server just dies.
-- The credentials must match seeded users that already exist in your database.
+- The credentials are env-driven with sensible defaults, so the suite can reuse whichever seeded admin/coach/player accounts your database already has.
 - `REQUEST_TIMEOUT` is important because it turns "the server got stuck" into a visible test failure instead of letting a request hang forever.
+- `BASE_URL` still defaults to the normal app port (`8000`) for ad-hoc runs, while the managed flow starts its own server on `127.0.0.1:TEST_API_PORT` and points the test phases there through `TEST_BASE_URL` / `config.BASE_URL`.
+- The app itself now reads `DB_POOL_SIZE` from the environment, so the harness can run race/ACID/stress with the normal pool and restart into a deliberately tiny pool only for the failure phase.
+- The Locust thresholds are configurable because the stress test is now machine-checked, not just visually inspected.
 
 ### helpers.py — Reusable Test Utilities
 
@@ -275,6 +303,8 @@ A `requests.Session` automatically stores and sends cookies. We now do one real 
 
 **Why each thread still gets its own session:** In `test_race_conditions.py`, every thread still calls `coach_session()` or `admin_session()` to get its own independent session object. This simulates separate clients. The important difference is that those sessions no longer all have to hit `/auth/login` at once before the real test even starts.
 
+**Why `clear_session_cache()` exists:** the managed harness restarts the API and, in the full-stack test, even restarts MySQL. Cached auth cookies from before a restart may no longer be valid, so the harness clears the cookie cache whenever the stack is restarted.
+
 **Test data factories:**
 ```python
 def create_test_equipment(session, total_qty=5):
@@ -291,6 +321,8 @@ Every test creates its own fresh data with random names. This way:
 1. Tests don't interfere with each other
 2. Tests don't depend on specific data existing
 3. You can run the suite multiple times without cleanup
+
+There is also a new helper, `add_member_to_team(...)`, which first reads the current team roster and then updates the team through the real `PUT /api/teams/{team_id}` API. That matters because some earlier test code assumed a simpler "add member" endpoint, but the current app syncs team membership through the team update route. The ACID and failure tests use this helper directly; `RC-1` performs the same team-update call inline inside `test_race_conditions.py`.
 
 **Direct DB access:**
 ```python
@@ -314,7 +346,7 @@ This runs **6 SQL queries** against the database to check invariants (rules that
 | No negative quantities | No equipment or issue has negative numbers | `WHERE TotalQuantity < 0` or `Quantity < 0` |
 | No orphan members | Every Member row has a corresponding users row | `LEFT JOIN` from Member to users, look for NULLs |
 
-**Why run these after every test?** Even if a test "passes" (the right number of API requests succeeded/failed), the database could still be in a bad state. These checks catch **silent corruption** that the API wouldn't report.
+**Why keep these checks as the final phase?** Even if individual tests "pass" (the right number of API requests succeeded/failed), the database could still be in a bad state. These checks catch **silent corruption** that the API wouldn't report.
 
 ---
 
@@ -395,8 +427,8 @@ This must return exactly 5. If it returns 6+, the lock failed and we over-issued
 
 **Expected result:**
 - All 20 requests are accounted for
-- All 20 succeed in the normal race test
 - Zero duplicate MemberIDs in the database
+- The pass condition is about **safety**, not "every request must succeed." Some requests may still fail under contention, but we must never create duplicate IDs or lose track of requests.
 
 **Why we verify with SQL:**
 ```sql
@@ -488,9 +520,9 @@ Timeline:
 2. Query the database directly — the member should be there
 3. Query via API — the member should be there
 
-**Why this is simple:** MySQL (InnoDB) guarantees durability through the **Write-Ahead Log (WAL)**. Every committed transaction is written to disk before the commit returns. Even if the server crashes immediately after, the data survives. Our test verifies this fundamental guarantee works.
+**Why this is simple:** MySQL (InnoDB) guarantees durability through the redo log / transaction log. Once a commit returns, the change should survive process restarts.
 
-**For your video demo:** You could enhance this by restarting MySQL between steps 1 and 2 to show data survives a restart. The code supports this but doesn't do it automatically since restarting MySQL requires sudo permissions.
+**Important distinction:** the dedicated ACID durability test is still the lightweight "write, then verify" check. The **actual restart-backed durability proof** now lives in `FS-3`, where the managed harness restarts both the API and MySQL and then verifies that committed data survived while interrupted work did not.
 
 ---
 
@@ -520,32 +552,46 @@ Timeline:
 **Goal:** When more requests come in than the connection pool can handle, the system should degrade gracefully (errors, not corruption).
 
 **Setup:**
-- The current app pool is larger than the original version, but we still send **35 concurrent requests** to create deliberate connection pressure
-- The goal is not "prove exactly the 6th request fails"; the goal is "prove the system degrades gracefully under resource pressure and then recovers"
+- During the failure phase, `run_all.py` restarts the API with `FAILURE_DB_POOL_SIZE` (default `5`)
+- The test creates equipment with a large `TotalQuantity` (`100`) so stock does not become the bottleneck
+- A direct MySQL connection takes a `SELECT ... FOR UPDATE` lock on that equipment row and holds it for a few seconds
+- While that lock is held, the test fires `max(DB_POOL_SIZE * 4, DB_POOL_SIZE + 8)` concurrent issue requests
+
+With the default failure pool size of 5, that becomes **20 concurrent requests** against a deliberately constrained app.
 
 **What happens:**
-- A burst of concurrent work competes for pooled DB connections, row locks, CPU, and request slots
-- Some requests may proceed, others may wait, and others may fail depending on timing
-- The important property is that the system recovers afterward and does not corrupt data
+- The held row lock causes request handlers to pile up waiting on the same critical section
+- Because the app pool is intentionally small in this phase, blocked handlers consume pooled DB connections under pressure
+- Some requests succeed after the lock is released, while others fail with timeout / connection / pool-style errors
+- The important property is not "zero errors"; it is "pressure is visible, recovery happens, and no invariant is broken"
 
 **What we verify:**
-1. Some requests succeed, many fail — that's expected and OK
+1. The test actually observed pressure (`pool_error > 0` or a clearly degraded success pattern)
 2. After the burst subsides (all threads finish), the system **recovers** — new requests work normally
 3. No data corruption — the equipment invariant (issued <= total) still holds
 
-**Why 35 threads?** It's a strong enough burst to stress the current app configuration without turning the test into a pointless denial-of-service script.
+This is more deterministic than a pure "spam the server" test because the row lock gives us a reliable bottleneck.
 
-### FS-3: Server Crash Simulation
+### FS-3: Full Stack Restart Verification
 
-**Goal:** Verify that database invariants hold even if the API server crashes.
+**Goal:** Prove two things at once:
+1. A committed write survives a real API + MySQL restart
+2. An interrupted in-flight write does **not** leave partial rows behind
 
-**What we check:**
-- Equipment quantity invariants are satisfied (issued <= total for all items)
-- All committed data is still in the database
+**What happens step by step:**
+1. Create one member normally and keep its `member_id` as the committed reference row
+2. Create another player, place them on a coach-owned team, and create one equipment item
+3. Take a direct `FOR UPDATE` lock on that equipment row so an issue request will block mid-operation
+4. Start a background thread that calls `POST /api/equipment/issue`
+5. While that request is blocked, call `harness.restart_stack()`
+6. After restart, verify:
+   - the committed member still exists and has the expected email
+   - the interrupted issue request did not finish successfully
+   - there are **0** `EquipmentIssue` rows for that blocked operation
 
-**Why we don't actually kill the server:** Automatically killing and restarting uvicorn is environment-dependent (different on Linux/Mac/Docker). Instead, we verify what matters: the **data** is safe because MySQL's durability guarantees it. The API server is stateless — restarting it just means reconnecting to MySQL.
+**Why this is stronger than the old version:** this is no longer a "theory-only" crash discussion. The suite really does stop the managed FastAPI process, execute `TEST_DB_RESTART_CMD`, wait for the DB health check command to pass, and start the API again.
 
-**For your video demo:** You could manually kill the uvicorn process (`kill -9 <pid>`), restart it, and show that all data is intact. This is dramatic and makes a great demo.
+This gives a much better durability/recovery demo because it distinguishes committed work from interrupted work.
 
 ---
 
@@ -589,16 +635,19 @@ def create_equipment(self): ...
 **Why these weights?** They simulate realistic usage patterns:
 - Read operations (listing) happen much more often than writes (creating)
 - Players mostly view their own profile and browse events
-- Coaches check their teams and issue equipment
-- Admins do a mix of management tasks
+- Coaches mostly review teams, events, equipment, issued gear, and performance data
+- Admins do a mix of list/read traffic plus a smaller amount of equipment/tournament creation
 
 ### What Locust Measures
 
-When you run Locust, it gives you:
-- **Requests per second (RPS)** — how many requests the server handles
-- **Response times** — p50 (median), p95 (95th percentile), p99 (99th percentile)
-- **Error rate** — percentage of failed requests
-- **Real-time charts** — watch performance as load increases
+In our automated flow, `test_stress.py` runs Locust headlessly, parses the JSON summary from stdout, aggregates the latency histogram into an overall **p95**, and also writes the usual CSV/HTML artifacts into `loadtest/results/`. It records:
+- **Total requests**
+- **Failure rate**
+- **Mean response time**
+- **p95 latency**
+- **Requests per second (RPS)**
+
+The pass/fail decision is machine-checked against `LOCUST_MAX_FAILURE_RATE` and `LOCUST_MAX_P95_MS`.
 
 ### Recommended Load Levels
 
@@ -613,17 +662,26 @@ When you run Locust, it gives you:
 
 **With web UI (recommended for demo):**
 ```bash
-locust -f locustfile.py --host=http://localhost:8000
+locust -f loadtest/locustfile.py --host=http://127.0.0.1:8001
 # Then open http://localhost:8089 in your browser
 ```
 
 **Headless (for automated runs):**
 ```bash
-locust -f locustfile.py --host=http://localhost:8000 --headless -u 50 -r 10 -t 2m
+locust -f loadtest/locustfile.py --host=http://127.0.0.1:8001 --headless -u 50 -r 10 -t 2m
 #   -u 50    = 50 total users
 #   -r 10    = spawn 10 users/second
 #   -t 2m    = run for 2 minutes
 ```
+
+**What `run_all.py` does now:** it runs Locust in headless mode automatically, parses the JSON output, and stores HTML/CSV artifacts in `loadtest/results/`.
+
+**Current checked-in report snapshot (`loadtest/results/report.md`, generated `2026-04-04 00:10:53`):**
+- 5408 total requests
+- 0.3% failure rate
+- 71.13 ms mean response time
+- 210 ms p95 latency
+- 45.07 requests/sec
 
 ---
 
@@ -709,12 +767,26 @@ The test helper now caches login cookies behind a lock and creates new `requests
 
 This makes the load tests cleaner because they stress the endpoint under test, not `/auth/login`.
 
+### Fix 6: Make Pool Size and Test Harness Behavior Environment-Driven
+
+**Files:** `app/config.py`, `app/database.py`, `loadtest/config.py`, `loadtest/harness.py`, `loadtest/run_all.py`
+
+The app and the test suite now share the idea that pool size is configuration, not a hard-coded constant.
+
+That enabled two important behaviors:
+- the managed harness can boot the API with the normal pool for race/ACID/stress work
+- it can then restart the API with a tiny failure-phase pool to create deterministic contention, before restoring the normal pool again
+
+We also now validate integer env vars through helper parsing so bad config fails early instead of causing confusing runtime behavior.
+
 ### How We Test All of This
 
 - The atomicity test confirms there are no orphan Member rows
 - The race-condition tests confirm equipment issuing, registration, and member creation all behave correctly under concurrency
+- The failure suite now includes a **real full-stack restart** check: committed data survives API + MySQL restart, and interrupted work leaves no partial rows
+- The Locust phase records request count, failure rate, mean latency, p95 latency, and requests/sec
 - The final verification pass confirms the database is still consistent after the whole suite
-- After these fixes, the full `run_all.py` suite completed with all 11 tests passing
+- In the current checked-in report snapshot in this repo (generated `2026-04-04 00:10:53`), the full `run_all.py` suite completed with **12/12 tests passing**, **6/6 DB checks passing**, and a total runtime of **159.3s**
 
 ---
 
@@ -722,7 +794,7 @@ This makes the load tests cleaner because they stress the endpoint under test, n
 
 ### verify.py — The Safety Net
 
-After every test phase, `verify.py` runs 6 SQL checks against the database. Think of it as a "doctor's checkup" for the database.
+At the end of the suite, `verify.py` runs 6 SQL checks against the database. Think of it as a final "doctor's checkup" for the database after all concurrent, failure, and stress phases have finished.
 
 Each check follows the same pattern:
 1. Run a SQL query that looks for violations
@@ -742,18 +814,25 @@ HAVING issued > e.TotalQuantity    -- Only return rows where MORE was issued tha
 
 If this returns any rows, it means we issued more equipment than we have — the FOR UPDATE lock failed.
 
-### run_all.py — The Orchestrator
+### harness.py + run_all.py — The Orchestrator
 
-This file runs everything in order and generates a report:
+The managed harness is what makes the current verification flow repeatable:
+- it starts a dedicated FastAPI server on `TEST_API_PORT`
+- injects `DB_POOL_SIZE` into that managed process
+- clears cached login cookies after restarts
+- can restart just the API or the full API + MySQL stack
+
+Then `run_all.py` executes the phases in order:
 
 ```
 Phase 1: Race Condition Tests (RC-1, RC-2, RC-3)
 Phase 2: ACID Property Tests (Atomicity, Consistency, Isolation x2, Durability)
-Phase 3: Failure Simulation Tests (FS-1, FS-2, FS-3)
-Phase 4: Post-Test Database Verification (6 checks)
+Phase 3: Failure Simulation Tests on reduced pool (FS-1, FS-2, FS-3)
+Phase 4: Automated Locust Stress Test
+Phase 5: Post-Test Database Verification (6 checks)
 ```
 
-At the end, it generates `results/report.md` — a Markdown table summarizing all results with PASS/FAIL for each test.
+One subtle but important detail: `run_all.py` restarts the API onto the smaller failure-test pool before Phase 3, then restores the normal pool and restarts again before the Locust phase. At the end, it generates `loadtest/results/report.md` with PASS/FAIL tables, stress metrics, and a requirement-to-evidence mapping table.
 
 ---
 
@@ -762,9 +841,9 @@ At the end, it generates `results/report.md` — a Markdown table summarizing al
 ### Prerequisites
 
 1. Make sure MySQL is running and the databases `olympia_auth` and `olympia_track` exist with data
-2. Make sure the FastAPI app is running (`uvicorn app.main:app`)
-3. Make sure the test users (admin, coach1, player1) exist in the database
-4. Make sure `API_CONTEXT_SECRET` is present in `Module_B/.env`, otherwise normal API writes may be mistaken for direct DB tampering by the MySQL triggers
+2. Make sure the test users (admin, coach, player) exist in the database
+3. Make sure `API_CONTEXT_SECRET` is present in `Module_B/.env`, otherwise normal API writes may be mistaken for direct DB tampering by the MySQL triggers
+4. Make sure `TEST_DB_RESTART_CMD` and `TEST_DB_HEALTHCHECK_CMD` are valid for your machine if you want the real full-stack restart verification
 
 ### Install Dependencies
 
@@ -778,28 +857,31 @@ This adds `locust` and `tabulate` to the existing requirements.
 ### Run the Full Suite
 
 ```bash
-cd Module_B/loadtest
-python run_all.py
+cd Module_B
+python loadtest/run_all.py
 ```
 
-This runs all tests and generates `results/report.md`.
+This starts a dedicated FastAPI test server on `TEST_API_PORT` (default `8001`), runs all phases, performs the restart check, runs Locust, and generates `loadtest/results/report.md`.
 
 ### Run Individual Test Files
 
 ```bash
-python test_race_conditions.py    # Just race condition tests
-python test_acid.py               # Just ACID tests
-python test_failure.py            # Just failure tests
-python verify.py                  # Just database checks
+cd Module_B/loadtest
+python test_race_conditions.py
+python test_acid.py
+python test_failure.py
+python test_stress.py
+python verify.py
 ```
 
 ### Run Locust Stress Test
 
 ```bash
-locust -f locustfile.py --host=http://localhost:8000
-# Open http://localhost:8089 in your browser
-# Set number of users and spawn rate, click Start
+cd Module_B
+locust -f loadtest/locustfile.py --host=http://127.0.0.1:8001
 ```
+
+Or let `python loadtest/run_all.py` run the bounded headless Locust phase automatically.
 
 ---
 
@@ -818,15 +900,12 @@ locust -f locustfile.py --host=http://localhost:8000
    - Show the atomicity test: "Duplicate username causes rollback, no orphan rows"
    - Mention that the fix is now bigger than one line: rollback, API context tagging, and safer ID generation all work together
 
-4. **Run Locust** — `locust -f locustfile.py --host=http://localhost:8000`
-   - Start with 10 users, ramp to 50
-   - Show the live charts (RPS, response times)
-   - Point out that error rate stays at 0% under moderate load
+4. **Run the full failure + restart flow** — `python loadtest/run_all.py`
+   - Point out the dedicated API harness on port `8001`
+   - Show the full-stack restart verification passing
+   - Show the Locust metrics section in the final report
 
-5. **Run verification** — `python verify.py`
-   - Show all 6 checks passing: "Even after all that stress, the database is perfectly consistent"
-
-6. **Show the generated report** — Open `results/report.md`
+5. **Show the generated report** — Open `loadtest/results/report.md`
 
 ### Key Talking Points
 
@@ -837,7 +916,8 @@ locust -f locustfile.py --host=http://localhost:8000
 - "The UNIQUE constraint acts as a safety net for registration races"
 - "MySQL's isolation prevents dirty reads — uncommitted data is invisible"
 - "Even when we kill database connections mid-operation, no data corruption occurs"
-- "The system handles 50 concurrent users with sub-second response times"
+- "The verification harness now performs a real API + MySQL restart and proves committed data survives it"
+- "The Locust phase records failure rate, p95 latency, and requests/sec as evidence for the stress-testing requirement"
 
 ---
 
@@ -850,7 +930,7 @@ locust -f locustfile.py --host=http://localhost:8000
 | Each thread gets its own session | Simulates independent users, not one user with multiple tabs |
 | Random test data names | Tests are idempotent — run them 100 times without cleanup |
 | 20 threads for races | High enough to trigger races, low enough to not crash the server |
-| 35-thread burst for exhaustion testing | Large enough to create contention and verify graceful recovery |
+| Reduced-pool burst + held row lock for exhaustion testing | Creates deterministic contention and lets us verify graceful recovery |
 | Barrier + Event for isolation test | Precise thread coordination to catch dirty reads |
 | `raise` instead of `return` in member creation | Lets `get_cross_db()` roll back both databases on failure |
 | Normalize member gender before insert | Prevents invalid enum values from breaking member creation |

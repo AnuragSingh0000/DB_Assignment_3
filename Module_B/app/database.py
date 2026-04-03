@@ -1,7 +1,7 @@
 import os
 import mysql.connector
 import mysql.connector.pooling
-from app.config import DB_CONFIG_AUTH, DB_CONFIG_TRACK
+from app.config import DB_CONFIG_AUTH, DB_CONFIG_TRACK, DB_POOL_SIZE
 
 _api_secret = os.getenv("API_CONTEXT_SECRET")
 if not _api_secret:
@@ -11,13 +11,13 @@ if not _api_secret:
 
 _auth_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="olympia_auth_pool",
-    pool_size=32,
+    pool_size=DB_POOL_SIZE,
     **DB_CONFIG_AUTH,
 )
 
 _track_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="olympia_track_pool",
-    pool_size=32,
+    pool_size=DB_POOL_SIZE,
     **DB_CONFIG_TRACK,
 )
 

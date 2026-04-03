@@ -6,9 +6,10 @@
 ## Table of Contents
 1. [Setup](#1-setup)
 2. [Starting the Server](#2-starting-the-server)
-3. [Demo Accounts](#3-demo-accounts)
-4. [UI Walkthrough](#4-ui-walkthrough)
-5. [API Testing (curl)](#5-api-testing-curl)
+3. [Automated Module B Verification](#3-automated-module-b-verification)
+4. [Demo Accounts](#4-demo-accounts)
+5. [UI Walkthrough](#5-ui-walkthrough)
+6. [API Testing (curl)](#6-api-testing-curl)
    - [Auth](#51-auth)
    - [Members](#52-members)
    - [Teams](#53-teams)
@@ -17,9 +18,9 @@
    - [Performance Logs](#56-performance-logs)
    - [Medical Records](#57-medical-records)
    - [Admin — Audit Log](#58-admin--audit-log)
-6. [RBAC Test Matrix](#6-rbac-test-matrix)
-7. [Audit Chain Tamper Demo](#7-audit-chain-tamper-demo)
-8. [Interactive API Docs](#8-interactive-api-docs)
+7. [RBAC Test Matrix](#7-rbac-test-matrix)
+8. [Audit Chain Tamper Demo](#8-audit-chain-tamper-demo)
+9. [Interactive API Docs](#9-interactive-api-docs)
 
 ---
 
@@ -83,7 +84,48 @@ curl http://localhost:8000/health
 
 ---
 
-## 3. Demo Accounts
+## 3. Automated Module B Verification
+
+The current `loadtest/run_all.py` suite does **not** depend on your manually running server. It:
+
+- starts its own FastAPI server on `TEST_API_PORT` (default `8001`)
+- uses the normal DB pool for race/ACID checks
+- restarts the API with `FAILURE_DB_POOL_SIZE=5` for deterministic failure checks, then restores the normal pool before the stress test
+- performs a real API + MySQL restart using `TEST_DB_RESTART_CMD`
+- runs a bounded headless Locust phase and writes metrics to `loadtest/results/report.md`
+
+Recommended env values in `Module_B/.env`:
+
+```env
+DB_POOL_SIZE=32
+TEST_BASE_URL=http://127.0.0.1:8001
+TEST_API_PORT=8001
+TEST_DB_RESTART_CMD=systemctl restart mysql
+TEST_DB_HEALTHCHECK_CMD=mysqladmin -h localhost -P 3306 -u olympia_app -proot ping
+LOCUST_USERS=100
+LOCUST_SPAWN_RATE=20
+LOCUST_DURATION=2m
+LOCUST_MAX_FAILURE_RATE=5
+LOCUST_MAX_P95_MS=2000
+```
+
+Run the full Module B verification:
+
+```bash
+cd Module_B
+python loadtest/run_all.py
+```
+
+For a faster smoke run while developing:
+
+```bash
+cd Module_B
+LOCUST_DURATION=15s LOCUST_USERS=20 LOCUST_SPAWN_RATE=5 python loadtest/run_all.py
+```
+
+---
+
+## 4. Demo Accounts
 
 | Username | Password | Role | MemberID | Who |
 |---|---|---|---|---|
@@ -93,7 +135,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 4. UI Walkthrough
+## 5. UI Walkthrough
 
 All UI pages are at `/ui/*`. Start from **http://localhost:8000**.
 
