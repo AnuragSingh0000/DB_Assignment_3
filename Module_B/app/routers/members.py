@@ -307,7 +307,7 @@ def create_member(
             cross_db, current_user["user_id"], current_user["username"],
             "INSERT", "users", None, "FAILURE", {"error": str(e)}, ip,
         )
-        return {"success": False, "message": humanize_db_error(e), "data": body}
+        raise HTTPException(status_code=400, detail=humanize_db_error(e)) from e
     write_audit_log(
         cross_db, current_user["user_id"], current_user["username"],
         "INSERT", "Member", str(member_id), "SUCCESS",
