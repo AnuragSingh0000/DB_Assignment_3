@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ event.EventName }} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto">
+        <a href="/ui/events" class="btn btn-outline-secondary btn-sm">Back</a>
+      </div>
+      <div class="col">
+        <h2 class="page-title">{{ event.EventName }}</h2>
+      </div>
+      {% if current_user.role == "Admin" %}
+      <div class="col-auto d-flex gap-2">
+        <a href="/ui/events/{{ event.EventID }}/edit" class="btn btn-primary btn-sm">Edit</a>
+        <form method="post" action="/ui/events/{{ event.EventID }}/delete"
+              onsubmit="return confirm('Delete this event?')">
+          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="row row-cards">
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="card-title">Event Details</h3>
+            <dl class="row">
+              <dt class="col-5 text-muted">Date</dt>
+              <dd class="col-7">{{ event.EventDate }}</dd>
+              <dt class="col-5 text-muted">Time</dt>
+              <dd class="col-7">{{ event.StartTime }} – {{ event.EndTime }}</dd>
+              <dt class="col-5 text-muted">Sport</dt>
+              <dd class="col-7">{{ event.SportName }}</dd>
+              <dt class="col-5 text-muted">Venue</dt>
+              <dd class="col-7">{{ event.VenueName }}</dd>
+              <dt class="col-5 text-muted">Round</dt>
+              <dd class="col-7">{{ event.Round or "—" }}</dd>
+              <dt class="col-5 text-muted">Tournament</dt>
+              <dd class="col-7">
+                {% if event.TournamentID %}
+                <a href="/ui/tournaments/{{ event.TournamentID }}">{{ event.TournamentName }}</a>
+                {% else %}—{% endif %}
+              </dd>
+              <dt class="col-5 text-muted">Status</dt>
+              <dd class="col-7">
+                <span class="badge bg-{% if event.Status == 'Ongoing' %}green{% elif event.Status == 'Scheduled' %}blue{% elif event.Status == 'Cancelled' %}red{% else %}secondary{% endif %}-lt">
+                  {{ event.Status }}
+                </span>
+              </dd>
+            </dl>
+          </div>
+        </div>
+
+        {% if current_user.role in ("Admin", "Coach") %}
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">Add Team</h3>
+            <div class="card-options text-muted small">{{ eligible_teams | length }} eligible</div>
+          </div>
+          <div class="card-body">
+            <form method="post" action="/ui/events/{{ event.EventID }}/add-team" class="d-flex gap-2">
+              <select name="team_id" class="form-select form-select-sm" {% if not eligible_teams %}disabled{% endif %} required>
+                <option value="">— Select team —</option>
+                {% for t in eligible_teams %}
+                <option value="{{ t.TeamID }}">{{ t.TeamID }} - {{ t.TeamName }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-success text-nowrap"
+                      {% if not eligible_teams %}disabled{% endif %}>
+                Add
+              </button>
+            </form>
+            {% if not eligible_teams %}
+            <div class="form-text mt-2">No eligible teams are available to add right now.</div>
+            {% endif %}
+            {% if current_user.role == "Coach" %}
+            <div class="form-text mt-2">You can only add teams that you coach.</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="col-md-8">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Participating Teams</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th>Score</th>
+                  <th>Rank</th>
+                  <th>Result</th>
+                  <th>Remarks</th>
+                  {% if current_user.role in ("Admin", "Coach") %}<th></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+              {% for p in participation %}
+                <tr data-team-id="{{ p.TeamID }}">
+                  <td><a href="/ui/teams/{{ p.TeamID }}">{{ p.TeamName }}</a></td>
+                  <td class="editable-cell" data-field="score">
+                    <span class="display-text">{{ p.Score or "—" }}</span>
+                    <input type="text" class="edit-input d-none form-control form-control-sm" value="{{ p.Score or '' }}" />
+                  </td>
+                  <td class="editable-cell" data-field="rank">
+                    <span class="display-text">{{ p.EventRank or "—" }}</span>
+                    <input type="number" class="edit-input d-none form-control form-control-sm" value="{{ p.EventRank or '' }}" />
+                  </td>
+                  <td class="editable-cell" data-field="result">
+                    <span class="display-text">
+                      {% if p.Result %}
+                      <span class="badge bg-{% if p.Result == 'Win' %}green{% elif p.Result == 'Loss' %}red{% elif p.Result == 'Draw' %}yellow{% else %}secondary{% endif %}-lt">
+                        {{ p.Result }}
+                      </span>
+                      {% else %}—{% endif %}
+                    </span>
+                    <select class="edit-input d-none form-select form-select-sm">
+                      <option value="">—</option>
+                      <option value="Win" {% if p.Result == 'Win' %}selected{% endif %}>Win</option>
+                      <option value="Loss" {% if p.Result == 'Loss' %}selected{% endif %}>Loss</option>
+                      <option value="Draw" {% if p.Result == 'Draw' %}selected{% endif %}>Draw</option>
+                    </select>
+                  </td>
+                  <td class="editable-cell" data-field="remarks">
+                    <span class="display-text">{{ p.Remarks or "—" }}</span>
+                    <textarea class="edit-input d-none form-control form-control-sm" rows="1">{{ p.Remarks or '' }}</textarea>
+                  </td>
+                  {% if current_user.role in ("Admin", "Coach") %}
+                  <td class="text-end">
+                    {% if current_user.role == "Admin" or p.CoachID == current_user.member_id %}
+                    <button type="button" class="btn btn-sm btn-outline-primary edit-btn">Edit</button>
+                    <button type="button" class="btn btn-sm btn-success save-btn d-none">Save</button>
+                    <button type="button" class="btn btn-sm btn-secondary cancel-btn d-none">Cancel</button>
+                    <form method="post" action="/ui/events/{{ event.EventID }}/remove-team/{{ p.TeamID }}"
+                          onsubmit="return confirm('Remove {{ p.TeamName }} from this event?')" class="d-inline ms-1">
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                    </form>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="{% if current_user.role in ('Admin', 'Coach') %}6{% else %}5{% endif %}" class="text-muted text-center">
+                    No teams registered
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const row = this.closest('tr');
+      const teamId = row.dataset.teamId;
+      const editableCells = row.querySelectorAll('.editable-cell');
+      
+      // Show inputs, hide displays
+      editableCells.forEach(cell => {
+        cell.querySelector('.display-text').classList.add('d-none');
+        cell.querySelector('.edit-input').classList.remove('d-none');
+      });
+      
+      // Toggle buttons
+      row.querySelector('.edit-btn').classList.add('d-none');
+      row.querySelector('.save-btn').classList.remove('d-none');
+      row.querySelector('.cancel-btn').classList.remove('d-none');
+    });
+  });
+  
+  document.querySelectorAll('.cancel-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const row = this.closest('tr');
+      const editableCells = row.querySelectorAll('.editable-cell');
+      
+      // Hide inputs, show displays
+      editableCells.forEach(cell => {
+        cell.querySelector('.display-text').classList.remove('d-none');
+        cell.querySelector('.edit-input').classList.add('d-none');
+      });
+      
+      // Reset inputs to original values
+      // For simplicity, we can reload the page or store originals
+      // For now, just toggle back
+      row.querySelector('.edit-btn').classList.remove('d-none');
+      row.querySelector('.save-btn').classList.add('d-none');
+      row.querySelector('.cancel-btn').classList.add('d-none');
+    });
+  });
+  
+  document.querySelectorAll('.save-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const row = this.closest('tr');
+      const teamId = row.dataset.teamId;
+      const editableCells = row.querySelectorAll('.editable-cell');
+      
+      const formData = new FormData();
+      editableCells.forEach(cell => {
+        const field = cell.dataset.field;
+        const input = cell.querySelector('.edit-input');
+        let value = input.value.trim();
+        if (field === 'score' && value === '') value = '';
+        if (field === 'rank' && value === '') value = '';
+        formData.append(field === 'rank' ? 'event_rank' : field, value);
+      });
+      
+      try {
+        const response = await fetch(`/ui/events/{{ event.EventID }}/edit-participation/${teamId}`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (response.redirected) {
+          // Success, redirect to the same page
+          window.location.href = response.url;
+        } else {
+          // Error, show message
+          const result = await response.text();
+          alert('Error updating: ' + result);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

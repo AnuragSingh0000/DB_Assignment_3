@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Login — Olympia Track</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css"/>
+</head>
+<body class="antialiased d-flex flex-column">
+<div class="page page-center">
+  <div class="container container-tight py-4">
+    <div class="text-center mb-4">
+      <h1 class="navbar-brand navbar-brand-autodark h1">Olympia Track</h1>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <div class="card card-md">
+      <div class="card-body">
+        <h2 class="h2 text-center mb-4">Sign in to your account</h2>
+        <form action="/ui/login" method="post" autocomplete="off">
+          <div class="mb-3">
+            <label class="form-label" for="username">Username</label>
+            <input type="text" id="username" name="username" class="form-control"
+                   placeholder="your username" required autofocus
+                   value="{{ username or '' }}"/>
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-control"
+                   placeholder="your password" required/>
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100">Sign in</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="text-center text-muted mt-3">
+      <small>Demo accounts: vikram_admin / admin123 &bull; raj_coach / coach123 &bull; aarav_player / player123</small>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ team.TeamName }} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto"><a href="/ui/teams" class="btn btn-outline-secondary btn-sm">Back</a></div>
+      <div class="col"><h2 class="page-title">{{ team.TeamName }}</h2></div>
+      {% if current_user.role == "Admin" or (current_user.role == "Coach" and team.CoachID == current_user.member_id) %}
+      <div class="col-auto">
+        <a href="/ui/teams/{{ team.TeamID }}/edit" class="btn btn-sm btn-outline-secondary">Edit</a>
+      </div>
+      {% endif %}
+      {% if current_user.role == "Admin" or (current_user.role == "Coach" and team.CoachID == current_user.member_id) %}
+      <div class="col-auto">
+        <form action="/ui/teams/{{ team.TeamID }}/delete" method="post"
+              onsubmit="return confirm('Delete this team and all its members?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="row row-cards">
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="card-title">Team Info</h3>
+            <dl class="row">
+              <dt class="col-5 text-muted">Sport</dt>       <dd class="col-7">{{ team.SportName }}</dd>
+              <dt class="col-5 text-muted">Coach</dt>       <dd class="col-7">{{ team.CoachName or '—' }}</dd>
+              <dt class="col-5 text-muted">Formed</dt>      <dd class="col-7">{{ team.FormedDate }}</dd>
+              <dt class="col-5 text-muted">Members</dt>     <dd class="col-7">{{ roster | length }}</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-8">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Roster</h3></div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr><th>Name</th><th>Role</th><th>Position</th><th>Captain</th><th>Joined</th></tr>
+              </thead>
+              <tbody>
+              {% for r in roster %}
+                <tr>
+                  <td>
+                    {% if current_user.role in ("Admin", "Coach") or current_user.member_id == r.MemberID %}
+                    <a href="/ui/members/{{ r.MemberID }}">{{ r.Name }}</a>
+                    {% else %}
+                    {{ r.Name }}
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="badge bg-{% if r.Role == 'Coach' %}orange{% else %}blue{% endif %}-lt">{{ r.Role }}</span>
+                  </td>
+                  <td class="text-muted">{{ r.Position or '—' }}</td>
+                  <td>{% if r.IsCaptain %}<span class="badge bg-yellow">Yes</span>{% else %}—{% endif %}</td>
+                  <td class="text-muted">{{ r.JoinDate }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">Events</h3></div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr><th>Event</th><th>Date</th><th>Time</th><th>Tournament</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+              {% for event in events %}
+                <tr>
+                  <td><a href="/ui/events/{{ event.EventID }}">{{ event.EventName }}</a></td>
+                  <td class="text-muted">{{ event.EventDate }}</td>
+                  <td class="text-muted">{{ event.StartTime }} - {{ event.EndTime }}</td>
+                  <td class="text-muted">{{ event.TournamentName or 'Standalone' }}</td>
+                  <td>
+                    <span class="badge bg-{% if event.Status == 'Ongoing' %}green{% elif event.Status == 'Scheduled' %}blue{% elif event.Status == 'Cancelled' %}red{% else %}secondary{% endif %}-lt">
+                      {{ event.Status }}
+                    </span>
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="5" class="text-muted text-center">This team is not part of any events yet.</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

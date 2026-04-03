@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Events — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col"><h2 class="page-title">Events</h2></div>
+      {% if current_user.role == "Admin" %}
+      <div class="col-auto">
+        <a href="/ui/events/new" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+               stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Event
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="card">
+      <div class="card-header">
+        <div class="input-group">
+          <select id="filter-attribute" class="form-select">
+            <option value="all">All attributes</option>
+            <option value="event">Event Name</option>
+            <option value="date">Date</option>
+            <option value="sport">Sport</option>
+            <option value="venue">Venue</option>
+            <option value="tournament">Tournament</option>
+            <option value="round">Round</option>
+            <option value="status">Status</option>
+          </select>
+          <input id="search" type="text" class="form-control" placeholder="Enter value to filter..."/>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-hover card-table" id="events-table">
+          <thead>
+            <tr><th>Event</th><th>Date</th><th>Sport</th><th>Venue</th><th>Tournament</th><th>Round</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+          {% for ev in events %}
+            <tr>
+              <td><a href="/ui/events/{{ ev.EventID }}">{{ ev.EventName }}</a></td>
+              <td class="text-muted">{{ ev.EventDate }}</td>
+              <td>{{ ev.SportName }}</td>
+              <td class="text-muted">{{ ev.VenueName }}</td>
+              <td class="text-muted">{{ ev.TournamentName or '—' }}</td>
+              <td class="text-muted">{{ ev.Round or '—' }}</td>
+              <td>
+                <span class="badge bg-{% if ev.Status == 'Ongoing' %}green{% elif ev.Status == 'Scheduled' %}blue{% elif ev.Status == 'Cancelled' %}red{% else %}secondary{% endif %}-lt">
+                  {{ ev.Status }}
+                </span>
+              </td>
+              <td class="text-end">
+                <a href="/ui/events/{{ ev.EventID }}" class="btn btn-sm btn-outline-primary">View</a>
+                {% if current_user.role == "Admin" %}
+                <a href="/ui/events/{{ ev.EventID }}/edit" class="btn btn-sm btn-outline-secondary">Edit</a>
+                <form action="/ui/events/{{ ev.EventID }}/delete" method="post" class="d-inline"
+                      onsubmit="return confirm('Delete {{ ev.EventName }}?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterEvents() {
+  const attribute = document.getElementById('filter-attribute').value;
+  const q = document.getElementById('search').value.toLowerCase();
+  const colIndex = {event: 0, date: 1, sport: 2, venue: 3, tournament: 4, round: 5, status: 6};
+  document.querySelectorAll('#events-table tbody tr').forEach(function(row) {
+    if (attribute === 'all') {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    } else {
+      const index = colIndex[attribute];
+      if (index !== undefined) {
+        const cell = row.querySelector(`td:nth-child(${index + 1})`);
+        row.style.display = cell.textContent.toLowerCase().includes(q) ? '' : 'none';
+      }
+    }
+  });
+}
+
+document.getElementById('filter-attribute').addEventListener('change', filterEvents);
+document.getElementById('search').addEventListener('input', filterEvents);
+</script>
+{% endblock %}

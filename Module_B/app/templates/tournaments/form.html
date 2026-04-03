@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{% if tournament %}Edit Tournament{% else %}New Tournament{% endif %} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto">
+        {% if tournament %}
+        <a href="/ui/tournaments/{{ tournament.TournamentID }}" class="btn btn-outline-secondary btn-sm">Back</a>
+        {% else %}
+        <a href="/ui/tournaments" class="btn btn-outline-secondary btn-sm">Back</a>
+        {% endif %}
+      </div>
+      <div class="col"><h2 class="page-title">{% if tournament %}Edit Tournament{% else %}New Tournament{% endif %}</h2></div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <div class="card">
+      <div class="card-body">
+        {% if tournament %}
+        <form method="post" action="/ui/tournaments/{{ tournament.TournamentID }}/edit">
+        {% else %}
+        <form method="post" action="/ui/tournaments/new">
+        {% endif %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Tournament Name</label>
+              <input type="text" name="tournament_name" class="form-control" required
+                     value="{{ form_data.tournament_name if form_data.tournament_name else '' }}"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Status</label>
+              <select name="status" class="form-select" required>
+                <option value="Upcoming" {% if form_data.status == 'Upcoming' or (tournament and tournament.Status == 'Upcoming' and not form_data.status) %}selected{% endif %}>Upcoming</option>
+                <option value="Ongoing" {% if form_data.status == 'Ongoing' or (tournament and tournament.Status == 'Ongoing' and not form_data.status) %}selected{% endif %}>Ongoing</option>
+                <option value="Completed" {% if form_data.status == 'Completed' or (tournament and tournament.Status == 'Completed' and not form_data.status) %}selected{% endif %}>Completed</option>
+              </select>
+              <div class="form-text">Status is derived from the start and end dates when the form is submitted.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Start Date</label>
+              <input type="date" name="start_date" class="form-control" required
+                     value="{{ form_data.start_date if form_data.start_date else '' }}"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">End Date</label>
+              <input type="date" name="end_date" class="form-control" required
+                     value="{{ form_data.end_date if form_data.end_date else '' }}"/>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+              <input type="text" name="description" class="form-control"
+                     value="{{ form_data.description if form_data.description else '' }}"/>
+            </div>
+          </div>
+          <div class="mt-4">
+            <button type="submit" class="btn btn-primary">
+              {% if tournament %}Save Changes{% else %}Create Tournament{% endif %}
+            </button>
+            {% if tournament %}
+            <a href="/ui/tournaments/{{ tournament.TournamentID }}" class="btn ms-2">Cancel</a>
+            {% else %}
+            <a href="/ui/tournaments" class="btn ms-2">Cancel</a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

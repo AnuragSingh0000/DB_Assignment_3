@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Equipment — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <h2 class="page-title">Equipment Inventory</h2>
+      </div>
+      {% if current_user.role == "Admin" %}
+      <div class="col-auto">
+        <a href="/ui/equipment/new" class="btn btn-primary">Add Inventory Item</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="row row-cards">
+
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Inventory</h3>
+            <div class="card-actions">
+              <span class="text-muted small">{{ equipment | length }} item(s)</span>
+            </div>
+          </div>
+          <div class="card-body border-bottom">
+            <div class="row g-2">
+              <div class="col-md-3">
+                <select id="equipment-filter-attribute" class="form-select">
+                  <option value="all">All attributes</option>
+                  <option value="id">ID</option>
+                  <option value="item">Item</option>
+                  <option value="sport">Sport</option>
+                  <option value="total">Total</option>
+                  <option value="available">Available</option>
+                  <option value="condition">Condition</option>
+                </select>
+              </div>
+              <div class="col-md-5">
+                <input id="equipment-search" type="text" class="form-control"
+                       placeholder="Enter value to filter inventory..."/>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table" id="equipment-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Item</th>
+                  <th>Sport</th>
+                  <th>Total</th>
+                  <th>Available</th>
+                  <th>Condition</th>
+                  {% if current_user.role == "Admin" %}
+                  <th class="text-end">Actions</th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+              {% for e in equipment %}
+                <tr>
+                  <td class="text-muted">{{ e.EquipmentID }}</td>
+                  <td>{{ e.EquipmentName }}</td>
+                  <td class="text-muted">{{ e.SportName or "General" }}</td>
+                  <td class="text-muted">{{ e.TotalQuantity }}</td>
+                  <td>
+                    <span class="{% if e.AvailableQuantity == 0 %}text-danger fw-bold{% elif e.AvailableQuantity <= 2 %}text-warning fw-bold{% else %}text-success{% endif %}">
+                      {{ e.AvailableQuantity }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge bg-{% if e.EquipmentCondition == 'New' %}green{% elif e.EquipmentCondition == 'Good' %}blue{% elif e.EquipmentCondition == 'Fair' %}yellow{% else %}red{% endif %}-lt">
+                      {{ e.EquipmentCondition }}
+                    </span>
+                  </td>
+                  {% if current_user.role == "Admin" %}
+                  <td class="text-end">
+                    <div class="btn-list justify-content-end flex-nowrap">
+                      <a href="/ui/equipment/{{ e.EquipmentID }}/edit" class="btn btn-outline-secondary btn-sm">
+                        Edit
+                      </a>
+                      <form method="post" action="/ui/equipment/{{ e.EquipmentID }}/delete" class="d-inline"
+                            onsubmit="return confirm('Delete this equipment item?');">
+                        <button type="submit" class="btn btn-outline-danger btn-sm"
+                                {% if e.IssuedQuantity and e.IssuedQuantity > 0 %}disabled{% endif %}>
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                  {% endif %}
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="{% if current_user.role == 'Admin' %}7{% else %}6{% endif %}" class="text-muted text-center">
+                    No equipment items found.
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Active Issues (Unreturned)</h3>
+            <div class="card-options text-muted small">{{ issues | length }} item(s) outstanding</div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Member</th>
+                  <th>Issued</th>
+                  <th>Qty</th>
+                  {% if current_user.role in ("Admin", "Coach") %}
+                  <th></th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+              {% for i in issues %}
+                <tr>
+                  <td>{{ i.EquipmentName }}</td>
+                  <td>
+                    {% if current_user.role in ("Admin", "Coach") or current_user.member_id == i.MemberID %}
+                    <a href="/ui/members/{{ i.MemberID }}">{{ i.MemberName }}</a>
+                    {% else %}
+                    {{ i.MemberName }}
+                    {% endif %}
+                  </td>
+                  <td class="text-muted">{{ i.IssueDate }}</td>
+                  <td>{{ i.Quantity }}</td>
+                  {% if current_user.role in ("Admin", "Coach") %}
+                  <td class="text-end">
+                    <form action="/ui/equipment/issue/{{ i.IssueID }}/return" method="post"
+                          class="d-inline-flex align-items-center gap-2">
+                      <input type="date" name="return_date" class="form-control form-control-sm"
+                             style="width: 140px" required min="{{ i.IssueDate }}" value="{{ i.IssueDate }}"/>
+                      <button type="submit" class="btn btn-sm btn-outline-success">Return</button>
+                    </form>
+                  </td>
+                  {% endif %}
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="{% if current_user.role in ('Admin', 'Coach') %}5{% else %}4{% endif %}" class="text-muted text-center">
+                    No outstanding issues.
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {% if current_user.role in ("Admin", "Coach") %}
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Issue Equipment</h3>
+          </div>
+          <div class="card-body">
+            <form method="post" action="/ui/equipment/issue">
+              <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                  <label class="form-label">Equipment</label>
+                  <select name="equipment_id" class="form-select" required>
+                    {% for e in equipment %}
+                    <option value="{{ e.EquipmentID }}">{{ e.EquipmentName }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Member ID</label>
+                  <input type="number" name="member_id" class="form-control" required min="1"
+                         placeholder="Enter member ID"/>
+                  <div class="form-text">
+                    {% if current_user.role == "Coach" %}
+                    Use a member from one of your teams.
+                    {% else %}
+                    Enter the target member ID directly.
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Issue Date</label>
+                  <input type="date" name="issue_date" class="form-control" required/>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Quantity</label>
+                  <input type="number" name="quantity" class="form-control" required min="1" value="1"/>
+                </div>
+                <div class="col-md-2">
+                  <button type="submit" class="btn btn-primary w-100">Issue</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterEquipmentTable() {
+  const attribute = document.getElementById("equipment-filter-attribute").value;
+  const query = document.getElementById("equipment-search").value.toLowerCase();
+  const colIndex = {id: 0, item: 1, sport: 2, total: 3, available: 4, condition: 5};
+
+  document.querySelectorAll("#equipment-table tbody tr").forEach(function(row) {
+    const cells = row.querySelectorAll("td");
+    if (!cells.length) {
+      row.style.display = "";
+      return;
+    }
+    if (attribute === "all") {
+      row.style.display = row.textContent.toLowerCase().includes(query) ? "" : "none";
+      return;
+    }
+    const index = colIndex[attribute];
+    const cell = row.querySelector(`td:nth-child(${index + 1})`);
+    row.style.display = cell && cell.textContent.toLowerCase().includes(query) ? "" : "none";
+  });
+}
+
+document.getElementById("equipment-filter-attribute").addEventListener("change", filterEquipmentTable);
+document.getElementById("equipment-search").addEventListener("input", filterEquipmentTable);
+</script>
+{% endblock %}

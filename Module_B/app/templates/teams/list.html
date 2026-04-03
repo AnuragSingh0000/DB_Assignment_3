@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Teams — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col"><h2 class="page-title">Teams</h2></div>
+      {% if current_user.role in ("Admin", "Coach") %}
+      <div class="col-auto">
+        <a href="/ui/teams/new" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+               stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Team
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="card">
+      <div class="card-header">
+        <div class="input-group">
+          <select id="filter-attribute" class="form-select">
+            <option value="all">All attributes</option>
+            <option value="id">ID</option>
+            <option value="name">Team Name</option>
+            <option value="sport">Sport</option>
+            <option value="coach">Coach</option>
+            <option value="formed">Formed</option>
+          </select>
+          <input id="search" type="text" class="form-control" placeholder="Enter value to filter..."/>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-hover card-table">
+          <thead>
+            <tr><th>ID</th><th>Team Name</th><th>Sport</th><th>Coach</th><th>Formed</th><th></th></tr>
+          </thead>
+          <tbody>
+          {% for t in teams %}
+            <tr>
+              <td class="text-muted">{{ t.TeamID }}</td>
+              <td><a href="/ui/teams/{{ t.TeamID }}">{{ t.TeamName }}</a></td>
+              <td>{{ t.SportName }}</td>
+              <td class="text-muted">{{ t.CoachName or '—' }}</td>
+              <td class="text-muted">{{ t.FormedDate }}</td>
+              <td class="text-end">
+                <a href="/ui/teams/{{ t.TeamID }}" class="btn btn-sm btn-outline-primary">View</a>
+                
+                {% if current_user.role == "Admin" or (current_user.role == "Coach" and t.CoachID == current_user.member_id) %}
+                <a href="/ui/teams/{{ t.TeamID }}/edit" class="btn btn-sm btn-outline-secondary">Edit</a>
+                <form action="/ui/teams/{{ t.TeamID }}/delete" method="post" class="d-inline"
+                      onsubmit="return confirm('Delete this team?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterTeams() {
+  const attribute = document.getElementById('filter-attribute').value;
+  const q = document.getElementById('search').value.toLowerCase();
+  const colIndex = {id: 0, name: 1, sport: 2, coach: 3, formed: 4};
+  document.querySelectorAll('table#members-table, table').forEach(function(table) {
+    // Only apply if this is the teams table (it has a header row with "Team Name")
+    if (!table.querySelector('th:nth-child(2)').textContent.includes('Team Name')) return;
+    table.querySelectorAll('tbody tr').forEach(function(row) {
+      if (attribute === 'all') {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      } else {
+        const index = colIndex[attribute];
+        const cell = row.querySelector(`td:nth-child(${index + 1})`);
+        row.style.display = cell.textContent.toLowerCase().includes(q) ? '' : 'none';
+      }
+    });
+  });
+}
+
+document.getElementById('filter-attribute').addEventListener('change', filterTeams);
+document.getElementById('search').addEventListener('input', filterTeams);
+</script>
+{% endblock %}

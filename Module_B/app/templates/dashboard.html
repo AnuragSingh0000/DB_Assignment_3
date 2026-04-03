@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <h2 class="page-title">Dashboard</h2>
+        <div class="text-muted mt-1">Welcome back, <strong>{{ current_user.username }}</strong>
+          <span class="badge bg-blue-lt ms-1">{{ current_user.role }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+
+    
+    <div class="row row-deck row-cards mb-3">
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex align-items-center">
+              <div class="subheader">Members</div>
+            </div>
+            <div class="h1 mb-3">{{ stats.members }}</div>
+            <div class="d-flex mb-2">
+              <div>Players: {{ stats.players }}, Coaches: {{ stats.coaches }}, Admins: {{ stats.admins }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="subheader">Teams</div>
+            <div class="h1 mb-3">{{ stats.teams }}</div>
+            <div>Across {{ stats.sports }} sports</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="subheader">Upcoming Events</div>
+            <div class="h1 mb-3">{{ stats.upcoming_events }}</div>
+            <div>{{ stats.ongoing_events }} ongoing</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="subheader">Equipment Items</div>
+            <div class="h1 mb-3">{{ stats.equipment }}</div>
+            <div>{{ stats.unreturned }} currently issued</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="row row-deck row-cards">
+      <div class="col-lg-7">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Upcoming &amp; Ongoing Events</h3>
+            <div class="card-options"><a href="/ui/events" class="btn btn-sm">View all</a></div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr><th>Event</th><th>Date</th><th>Venue</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+              {% for ev in recent_events %}
+                <tr>
+                  <td><a href="/ui/events/{{ ev.EventID }}">{{ ev.EventName }}</a></td>
+                  <td class="text-muted">{{ ev.EventDate }}</td>
+                  <td class="text-muted">{{ ev.VenueName }}</td>
+                  <td>
+                    <span class="badge bg-{% if ev.Status == 'Ongoing' %}green{% elif ev.Status == 'Scheduled' %}blue{% else %}secondary{% endif %}-lt">
+                      {{ ev.Status }}
+                    </span>
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="text-muted text-center">No events</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Active Tournaments</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr><th>Tournament</th><th>Status</th><th>End Date</th></tr>
+              </thead>
+              <tbody>
+              {% for t in tournaments %}
+                <tr>
+                  <td>{{ t.TournamentName }}</td>
+                  <td>
+                    <span class="badge bg-{% if t.Status == 'Ongoing' %}green{% elif t.Status == 'Upcoming' %}blue{% else %}secondary{% endif %}-lt">
+                      {{ t.Status }}
+                    </span>
+                  </td>
+                  <td class="text-muted">{{ t.EndDate }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

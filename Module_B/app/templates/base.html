@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
+  <title>{% block title %}Olympia Track{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css"/>
+</head>
+<body class="antialiased">
+<div class="wrapper">
+
+  
+  <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <a href="/ui/dashboard">Olympia Track</a>
+      </h1>
+
+      <div class="collapse navbar-collapse" id="sidebar-menu">
+        <ul class="navbar-nav pt-lg-3">
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/ui/dashboard">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M5 12l-2 0l9 -9l9 9l-2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/>
+                  <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/></svg>
+              </span>
+              <span class="nav-link-title">Dashboard</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'members' %}active{% endif %}" href="/ui/members">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/></svg>
+              </span>
+              <span class="nav-link-title">Members</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'teams' %}active{% endif %}" href="/ui/teams">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <circle cx="7" cy="7" r="4"/><circle cx="17" cy="7" r="4"/>
+                  <path d="M1 21v-2a4 4 0 0 1 4 -4h4"/><path d="M15 21v-2a4 4 0 0 1 4 -4h4"/></svg>
+              </span>
+              <span class="nav-link-title">Teams</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'tournaments' %}active{% endif %}" href="/ui/tournaments">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M8 21l8 0"/><path d="M12 17l0 4"/><path d="M7 4l10 0"/><path d="M17 4v8a5 5 0 0 1 -10 0v-8"/>
+                  <path d="M5 9m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M19 9m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/></svg>
+              </span>
+              <span class="nav-link-title">Tournaments</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'events' %}active{% endif %}" href="/ui/events">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <rect x="4" y="5" width="16" height="16" rx="2"/>
+                  <line x1="16" y1="3" x2="16" y2="7"/><line x1="8" y1="3" x2="8" y2="7"/>
+                  <line x1="4" y1="11" x2="20" y2="11"/></svg>
+              </span>
+              <span class="nav-link-title">Events</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'equipment' %}active{% endif %}" href="/ui/equipment">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6-6a6 6 0 0 1 -8 -8l3.5 3.5"/></svg>
+              </span>
+              <span class="nav-link-title">Equipment</span>
+            </a>
+          </li>
+
+          {% if current_user.role == "Admin" %}
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'audit' %}active{% endif %}" href="/ui/admin/audit">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
+                  <line x1="9" y1="9" x2="10" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+              </span>
+              <span class="nav-link-title">Audit Log</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if active == 'tamper' %}active{% endif %}" href="/ui/admin/direct-modifications">
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+                     stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M12 9v2m0 4v.01"/><path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.84 2.75z"/></svg>
+              </span>
+              <span class="nav-link-title">Tamper Detection</span>
+            </a>
+          </li>
+          {% endif %}
+
+        </ul>
+
+        <div class="mt-auto pb-3">
+          <div class="nav-item dropdown">
+            <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown">
+              <span class="avatar avatar-sm" style="background-color: #206bc4; color: white; font-weight: bold;">
+                {{ current_user.username[0].upper() }}
+              </span>
+              <div class="d-none d-xl-block ps-2">
+                <div>{{ current_user.username }}</div>
+                <div class="mt-1 small text-muted">{{ current_user.role }}</div>
+              </div>
+            </a>
+            <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+              <a href="/ui/members/{{ current_user.member_id }}" class="dropdown-item">My Profile</a>
+              <div class="dropdown-divider"></div>
+              <form method="post" action="/auth/logout" style="margin:0">
+                <button type="submit" class="dropdown-item text-danger" style="background:none;border:none;width:100%;text-align:left;cursor:pointer;">Logout</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  
+  <div class="page-wrapper">
+    {% if flash %}
+    <div class="container-xl pt-3">
+      <div class="alert alert-{{ flash.type }} alert-dismissible" role="alert">
+        {{ flash.message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

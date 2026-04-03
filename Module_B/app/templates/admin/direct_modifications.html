@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Tamper Detection — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col"><h2 class="page-title">Tamper Detection</h2></div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+
+    {% if entries | length == 0 %}
+    <div class="alert alert-success">
+      No unauthorized direct database modifications detected.
+    </div>
+    {% else %}
+    <div class="alert alert-danger">
+      {{ entries | length }} unauthorized direct modification(s) detected.
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="text-muted small">Showing last {{ entries | length }} entries. These modifications bypassed the API layer.</div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table font-monospace" style="font-size:0.8rem;">
+          <thead>
+            <tr>
+              <th>ID</th><th>Detected At</th><th>DB User</th><th>Table</th>
+              <th>Operation</th><th>Row Key</th><th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for e in entries %}
+            <tr>
+              <td class="text-muted">{{ e.id }}</td>
+              <td class="text-muted">{{ e.detected_at }}</td>
+              <td>{{ e.db_user }}</td>
+              <td class="text-muted">{{ e.table_name }}</td>
+              <td>
+                <span class="badge bg-{% if e.operation == 'INSERT' %}blue{% elif e.operation == 'UPDATE' %}orange{% else %}red{% endif %}-lt">
+                  {{ e.operation }}
+                </span>
+              </td>
+              <td class="text-muted">{{ e.row_key or '—' }}</td>
+              <td class="text-muted">{{ e.details or '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

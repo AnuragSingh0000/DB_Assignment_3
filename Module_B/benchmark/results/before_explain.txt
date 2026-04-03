@@ -1,0 +1,90 @@
+
+────────────────────────────────────────────────────────────
+GET /api/members [admin]
+────────────────────────────────────────────────────────────
+  table=Member | type=index | possible_keys=None | key=PRIMARY | rows=20 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/members/1 [admin]
+────────────────────────────────────────────────────────────
+  table=tm | type=ref | possible_keys=PRIMARY,MemberID | key=MemberID | rows=2 | Extra=None
+  table=t | type=eq_ref | possible_keys=PRIMARY,SportID | key=PRIMARY | rows=1 | Extra=None
+  table=s | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/teams [admin]
+────────────────────────────────────────────────────────────
+  table=s | type=index | possible_keys=PRIMARY | key=SportName | rows=8 | Extra=Using index; Using temporary; Using filesort
+  table=t | type=ref | possible_keys=SportID | key=SportID | rows=1 | Extra=None
+  table=m | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/events [admin]
+────────────────────────────────────────────────────────────
+  table=s | type=index | possible_keys=PRIMARY | key=SportName | rows=8 | Extra=Using index; Using temporary; Using filesort
+  table=e | type=ref | possible_keys=VenueID,SportID | key=SportID | rows=1 | Extra=None
+  table=v | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=t | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/events?tournament_id=1
+────────────────────────────────────────────────────────────
+  table=e | type=ref | possible_keys=TournamentID,VenueID,SportID | key=TournamentID | rows=3 | Extra=Using filesort
+  table=t | type=const | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=s | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=v | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/events?sport_id=1
+────────────────────────────────────────────────────────────
+  table=s | type=const | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=Using filesort
+  table=e | type=ref | possible_keys=VenueID,SportID | key=SportID | rows=4 | Extra=None
+  table=t | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=v | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/equipment/issues [admin]
+────────────────────────────────────────────────────────────
+  table=e | type=ALL | possible_keys=PRIMARY | key=None | rows=15 | Extra=Using temporary; Using filesort
+  table=ei | type=ref | possible_keys=EquipmentID,MemberID | key=EquipmentID | rows=1 | Extra=None
+  table=m | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/equipment/issues [player]
+────────────────────────────────────────────────────────────
+  table=m | type=const | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=Using filesort
+  table=ei | type=ref | possible_keys=EquipmentID,MemberID | key=MemberID | rows=2 | Extra=None
+  table=e | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/performance-logs [admin]
+────────────────────────────────────────────────────────────
+  table=pl | type=ALL | possible_keys=MemberID,SportID | key=None | rows=1 | Extra=Using filesort
+  table=s | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=m | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/performance-logs [coach]
+────────────────────────────────────────────────────────────
+  table=pl | type=ALL | possible_keys=MemberID,SportID | key=None | rows=1 | Extra=Using filesort
+  table=s | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=m | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+  table=tm | type=ref | possible_keys=PRIMARY,MemberID | key=MemberID | rows=1 | Extra=Using index
+  table=t | type=eq_ref | possible_keys=PRIMARY,CoachID | key=PRIMARY | rows=1 | Extra=Using where; FirstMatch(m)
+
+────────────────────────────────────────────────────────────
+GET /api/performance-logs [player]
+────────────────────────────────────────────────────────────
+  table=m | type=const | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=Using filesort
+  table=pl | type=ref | possible_keys=MemberID,SportID | key=MemberID | rows=5 | Extra=None
+  table=s | type=eq_ref | possible_keys=PRIMARY | key=PRIMARY | rows=1 | Extra=None
+
+────────────────────────────────────────────────────────────
+GET /api/medical-records/1 [admin]
+────────────────────────────────────────────────────────────
+  table=MedicalRecord | type=ref | possible_keys=MemberID | key=MemberID | rows=2 | Extra=Using filesort
+
+────────────────────────────────────────────────────────────
+GET /admin/audit-log
+────────────────────────────────────────────────────────────
+  table=audit_log | type=index | possible_keys=None | key=PRIMARY | rows=100 | Extra=Backward index scan

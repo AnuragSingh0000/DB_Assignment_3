@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{% if equipment %}Edit Equipment{% else %}Add Equipment{% endif %} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto">
+        <a href="/ui/equipment" class="btn btn-outline-secondary btn-sm">Back</a>
+      </div>
+      <div class="col">
+        <h2 class="page-title">{% if equipment %}Edit Equipment{% else %}Add Equipment{% endif %}</h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="{% if equipment %}/ui/equipment/{{ equipment.EquipmentID }}/edit{% else %}/ui/equipment/new{% endif %}">
+          <div class="row g-3">
+
+            {% if not equipment %}
+            <div class="col-md-3">
+              <label class="form-label">Equipment ID</label>
+              <input type="text" class="form-control" value="Auto-generated" disabled/>
+              <div class="form-text">The system will assign the equipment ID automatically.</div>
+            </div>
+            {% endif %}
+
+            <div class="{% if not equipment %}col-md-9{% else %}col-md-6{% endif %}">
+              <label class="form-label">Item Name</label>
+              <input type="text" name="equipment_name" class="form-control" required
+                     value="{{ form_data.get('equipment_name', '') or (equipment.EquipmentName if equipment else '') }}"/>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Total Quantity</label>
+              <input type="number" name="total_quantity" class="form-control" required min="0"
+                     value="{{ form_data.get('total_quantity', '') if form_data.get('total_quantity') is not none else (equipment.TotalQuantity if equipment else 1) }}"/>
+              {% if equipment %}
+              <div class="form-text">It cannot go below the quantity currently issued out.</div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Condition</label>
+              <select name="equipment_condition" class="form-select" required>
+                {% for condition in ["New", "Good", "Fair", "Poor"] %}
+                <option value="{{ condition }}"
+                        {% if form_data.get('equipment_condition') == condition or (equipment and equipment.EquipmentCondition == condition and not form_data.get('equipment_condition')) %}selected{% endif %}>
+                  {{ condition }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Sport</label>
+              <select name="sport_id" class="form-select">
+                <option value="">General / No Sport</option>
+                {% for sport in sports %}
+                <option value="{{ sport.SportID }}"
+                        {% if form_data.get('sport_id')|string == sport.SportID|string or (equipment and equipment.SportID == sport.SportID and form_data.get('sport_id') is none) %}selected{% endif %}>
+                  {{ sport.SportName }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+          </div>
+
+          <div class="mt-4">
+            <button type="submit" class="btn btn-primary">
+              {% if equipment %}Save Changes{% else %}Create Equipment{% endif %}
+            </button>
+            <a href="/ui/equipment" class="btn ms-2">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

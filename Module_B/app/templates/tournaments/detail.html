@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ tournament.TournamentName }} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto"><a href="/ui/tournaments" class="btn btn-outline-secondary btn-sm">Back</a></div>
+      <div class="col"><h2 class="page-title">{{ tournament.TournamentName }}</h2></div>
+      {% if current_user.role == "Admin" %}
+      <div class="col-auto d-flex gap-2">
+        <a href="/ui/tournaments/{{ tournament.TournamentID }}/edit-form" class="btn btn-primary btn-sm">Edit</a>
+        <form method="post" action="/ui/tournaments/{{ tournament.TournamentID }}/delete"
+              onsubmit="return confirm('Delete this tournament and all its events?')">
+          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="row row-cards">
+
+      
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="card-title">Details</h3>
+            <dl class="row">
+              <dt class="col-5 text-muted">Status</dt>
+              <dd class="col-7">
+                <span class="badge bg-{% if tournament.Status == 'Ongoing' %}green{% elif tournament.Status == 'Upcoming' %}blue{% else %}secondary{% endif %}-lt">
+                  {{ tournament.Status }}
+                </span>
+              </dd>
+              <dt class="col-5 text-muted">Start</dt><dd class="col-7">{{ tournament.StartDate }}</dd>
+              <dt class="col-5 text-muted">End</dt><dd class="col-7">{{ tournament.EndDate }}</dd>
+              {% if tournament.Description %}
+              <dt class="col-5 text-muted">Description</dt><dd class="col-7">{{ tournament.Description }}</dd>
+              {% endif %}
+            </dl>
+          </div>
+        </div>
+
+        
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">Registered Teams</h3>
+            <div class="card-options text-muted small">{{ registered_teams | length }}</div>
+          </div>
+          <div class="list-group list-group-flush">
+            {% for t in registered_teams %}
+            <div class="list-group-item">
+              <div class="row align-items-center">
+                <div class="col">
+                  <a href="/ui/teams/{{ t.TeamID }}">{{ t.TeamName }}</a>
+                  <div class="text-muted small">{{ t.SportName }}</div>
+                </div>
+                {% if current_user.role == "Admin" %}
+                <div class="col-auto">
+                  <form method="post" action="/ui/tournaments/{{ tournament.TournamentID }}/unregister/{{ t.TeamID }}"
+                        onsubmit="return confirm('Unregister {{ t.TeamName }}?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                  </form>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <div class="list-group-item text-muted">No teams registered yet</div>
+            {% endfor %}
+          </div>
+
+          {% if current_user.role in ("Admin", "Coach") and all_teams %}
+          <div class="card-body border-top">
+            <form method="post" action="/ui/tournaments/{{ tournament.TournamentID }}/register"
+                  class="d-flex gap-2">
+              <select name="team_id" class="form-select form-select-sm" required>
+                <option value="">— Select team —</option>
+                {% for t in all_teams %}
+                <option value="{{ t.TeamID }}">{{ t.TeamID }} - {{ t.TeamName }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-success text-nowrap">Register</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      
+      <div class="col-md-8">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Events</h3>
+            {% if current_user.role == "Admin" %}
+            <div class="card-options">
+              <a href="/ui/events/new" class="btn btn-primary btn-sm">New Event</a>
+            </div>
+            {% endif %}
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr><th>Event</th><th>Date</th><th>Sport</th><th>Venue</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+              {% for ev in events %}
+                <tr>
+                  <td><a href="/ui/events/{{ ev.EventID }}">{{ ev.EventName }}</a></td>
+                  <td class="text-muted">{{ ev.EventDate }}</td>
+                  <td class="text-muted">{{ ev.SportName }}</td>
+                  <td class="text-muted">{{ ev.VenueName }}</td>
+                  <td>
+                    <span class="badge bg-{% if ev.Status == 'Ongoing' %}green{% elif ev.Status == 'Scheduled' %}blue{% elif ev.Status == 'Cancelled' %}red{% else %}secondary{% endif %}-lt">
+                      {{ ev.Status }}
+                    </span>
+                  </td>
+                  <td class="text-end">
+                    {% if current_user.role == "Admin" %}
+                    <div class="d-flex gap-1 justify-content-end">
+                      <a href="/ui/events/{{ ev.EventID }}/edit" class="btn btn-sm btn-outline-primary">Edit</a>
+                      <form method="post" action="/ui/events/{{ ev.EventID }}/delete"
+                            onsubmit="return confirm('Delete event?')">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
+                      </form>
+                    </div>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="6" class="text-muted text-center">No events yet</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

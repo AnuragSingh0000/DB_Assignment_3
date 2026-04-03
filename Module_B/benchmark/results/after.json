@@ -1,0 +1,693 @@
+{
+  "results": {
+    "GET /api/members/1 [admin]": {
+      "min": 10.82,
+      "mean": 14.38,
+      "p95": 17.94,
+      "max": 22.46,
+      "errors": 0
+    },
+    "GET /api/members/1 [coach]": {
+      "min": 11.19,
+      "mean": 14.5,
+      "p95": 17.7,
+      "max": 20.08,
+      "errors": 0
+    },
+    "GET /api/teams/1 [admin]": {
+      "min": 10.36,
+      "mean": 13.86,
+      "p95": 17.73,
+      "max": 25.47,
+      "errors": 0
+    },
+    "GET /api/performance-logs [admin]": {
+      "min": 10.38,
+      "mean": 13.32,
+      "p95": 15.59,
+      "max": 46.05,
+      "errors": 0
+    },
+    "GET /admin/verify-audit": {
+      "min": 25.69,
+      "mean": 30.89,
+      "p95": 35.15,
+      "max": 56.87,
+      "errors": 0
+    }
+  },
+  "sql_results": {
+    "GET /api/members [admin]": {
+      "min": 0.289,
+      "mean": 0.487,
+      "p95": 0.888,
+      "max": 1.123
+    },
+    "GET /api/members/1 [admin]": {
+      "min": 0.231,
+      "mean": 0.372,
+      "p95": 0.606,
+      "max": 0.834
+    },
+    "GET /api/teams [admin]": {
+      "min": 0.309,
+      "mean": 0.457,
+      "p95": 0.596,
+      "max": 0.741
+    },
+    "GET /api/events [admin]": {
+      "min": 0.412,
+      "mean": 0.665,
+      "p95": 1.002,
+      "max": 1.36
+    },
+    "GET /api/events?tournament_id=1": {
+      "min": 0.293,
+      "mean": 0.527,
+      "p95": 1.096,
+      "max": 1.332
+    },
+    "GET /api/events?sport_id=1": {
+      "min": 0.296,
+      "mean": 0.482,
+      "p95": 0.842,
+      "max": 1.208
+    },
+    "GET /api/equipment/issues [admin]": {
+      "min": 0.354,
+      "mean": 0.589,
+      "p95": 1.101,
+      "max": 1.295
+    },
+    "GET /api/equipment/issues [player]": {
+      "min": 0.292,
+      "mean": 0.443,
+      "p95": 0.669,
+      "max": 0.879
+    },
+    "GET /api/performance-logs [admin]": {
+      "min": 0.368,
+      "mean": 0.571,
+      "p95": 0.857,
+      "max": 0.968
+    },
+    "GET /api/performance-logs [coach]": {
+      "min": 0.414,
+      "mean": 0.745,
+      "p95": 1.395,
+      "max": 1.997
+    },
+    "GET /api/performance-logs [player]": {
+      "min": 0.274,
+      "mean": 0.455,
+      "p95": 0.653,
+      "max": 0.908
+    },
+    "GET /api/medical-records/1 [admin]": {
+      "min": 0.241,
+      "mean": 0.379,
+      "p95": 0.597,
+      "max": 0.761
+    },
+    "GET /admin/audit-log": {
+      "min": 0.778,
+      "mean": 1.104,
+      "p95": 1.674,
+      "max": 1.802
+    }
+  },
+  "explain": {
+    "GET /api/members [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "Member",
+        "partitions": null,
+        "type": "index",
+        "possible_keys": null,
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": null,
+        "rows": 20,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/members/1 [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "tm",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "PRIMARY,idx_teammember_memberid",
+        "key": "idx_teammember_memberid",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 2,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "t",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY,SportID",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.tm.TeamID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.t.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/teams [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "index",
+        "possible_keys": "PRIMARY",
+        "key": "SportName",
+        "key_len": "202",
+        "ref": null,
+        "rows": 8,
+        "filtered": 100.0,
+        "Extra": "Using index; Using temporary; Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "t",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "SportID",
+        "key": "SportID",
+        "key_len": "4",
+        "ref": "olympia_track.s.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.t.CoachID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/events [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "index",
+        "possible_keys": "PRIMARY",
+        "key": "SportName",
+        "key_len": "202",
+        "ref": null,
+        "rows": 8,
+        "filtered": 100.0,
+        "Extra": "Using index; Using temporary; Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "e",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "VenueID,idx_event_sportid_eventdate",
+        "key": "idx_event_sportid_eventdate",
+        "key_len": "4",
+        "ref": "olympia_track.s.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "v",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.VenueID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "t",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.TournamentID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/events?tournament_id=1": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "e",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "TournamentID,VenueID,idx_event_sportid_eventdate",
+        "key": "TournamentID",
+        "key_len": "5",
+        "ref": "const",
+        "rows": 3,
+        "filtered": 100.0,
+        "Extra": "Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "t",
+        "partitions": null,
+        "type": "const",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "v",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.VenueID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/events?sport_id=1": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "const",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "e",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "VenueID,idx_event_sportid_eventdate",
+        "key": "idx_event_sportid_eventdate",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 4,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "t",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.TournamentID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "v",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.e.VenueID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/equipment/issues [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "e",
+        "partitions": null,
+        "type": "ALL",
+        "possible_keys": "PRIMARY",
+        "key": null,
+        "key_len": null,
+        "ref": null,
+        "rows": 15,
+        "filtered": 100.0,
+        "Extra": "Using temporary; Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "ei",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "EquipmentID,MemberID",
+        "key": "EquipmentID",
+        "key_len": "4",
+        "ref": "olympia_track.e.EquipmentID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.ei.MemberID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/equipment/issues [player]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "const",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": "Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "ei",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "EquipmentID,MemberID",
+        "key": "MemberID",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 2,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "e",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.ei.EquipmentID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/performance-logs [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "pl",
+        "partitions": null,
+        "type": "ALL",
+        "possible_keys": "SportID,idx_perflog_member_date",
+        "key": null,
+        "key_len": null,
+        "ref": null,
+        "rows": 20,
+        "filtered": 100.0,
+        "Extra": "Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.pl.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.pl.MemberID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/performance-logs [coach]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "<subquery2>",
+        "partitions": null,
+        "type": "ALL",
+        "possible_keys": null,
+        "key": null,
+        "key_len": null,
+        "ref": null,
+        "rows": null,
+        "filtered": 100.0,
+        "Extra": "Using temporary; Using filesort"
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "pl",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "SportID,idx_perflog_member_date",
+        "key": "idx_perflog_member_date",
+        "key_len": "4",
+        "ref": "<subquery2>.MemberID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.pl.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "<subquery2>.MemberID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 2,
+        "select_type": "MATERIALIZED",
+        "table": "t",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "PRIMARY,CoachID",
+        "key": "CoachID",
+        "key_len": "5",
+        "ref": "const",
+        "rows": 4,
+        "filtered": 100.0,
+        "Extra": "Using index"
+      },
+      {
+        "id": 2,
+        "select_type": "MATERIALIZED",
+        "table": "tm",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "PRIMARY,idx_teammember_memberid",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.t.TeamID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": "Using index"
+      }
+    ],
+    "GET /api/performance-logs [player]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "m",
+        "partitions": null,
+        "type": "const",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "pl",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "SportID,idx_perflog_member_date",
+        "key": "idx_perflog_member_date",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 5,
+        "filtered": 100.0,
+        "Extra": null
+      },
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "s",
+        "partitions": null,
+        "type": "eq_ref",
+        "possible_keys": "PRIMARY",
+        "key": "PRIMARY",
+        "key_len": "4",
+        "ref": "olympia_track.pl.SportID",
+        "rows": 1,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /api/medical-records/1 [admin]": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "MedicalRecord",
+        "partitions": null,
+        "type": "ref",
+        "possible_keys": "idx_medical_member_date",
+        "key": "idx_medical_member_date",
+        "key_len": "4",
+        "ref": "const",
+        "rows": 2,
+        "filtered": 100.0,
+        "Extra": null
+      }
+    ],
+    "GET /admin/audit-log": [
+      {
+        "id": 1,
+        "select_type": "SIMPLE",
+        "table": "audit_log",
+        "partitions": null,
+        "type": "index",
+        "possible_keys": null,
+        "key": "PRIMARY",
+        "key_len": "8",
+        "ref": null,
+        "rows": 100,
+        "filtered": 100.0,
+        "Extra": "Backward index scan"
+      }
+    ]
+  }
+}

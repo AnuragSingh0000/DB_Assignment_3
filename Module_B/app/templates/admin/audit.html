@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col"><h2 class="page-title">Audit Log</h2></div>
+      <div class="col-auto">
+        <button id="verify-btn" class="btn btn-outline-warning">Verify Chain Integrity</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+
+    <div id="verify-result" class="mb-3" style="display:none;"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="text-muted small">Showing last {{ logs | length }} entries. Hash chain is cryptographically linked.</div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table font-monospace" style="font-size:0.8rem;">
+          <thead>
+            <tr>
+              <th>ID</th><th>Timestamp</th><th>User</th><th>Action</th>
+              <th>Table</th><th>Record</th><th>Status</th><th>IP</th><th>Hash (prefix)</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for log in logs %}
+            <tr>
+              <td class="text-muted">{{ log.log_id }}</td>
+              <td class="text-muted">{{ log.timestamp }}</td>
+              <td>{{ log.username or '—' }}</td>
+              <td>
+                <span class="badge bg-{% if log.action in ['INSERT','UPDATE','DELETE'] %}orange{% elif log.action == 'LOGIN' %}blue{% elif log.action == 'LOGOUT' %}secondary{% else %}green{% endif %}-lt">
+                  {{ log.action }}
+                </span>
+              </td>
+              <td class="text-muted">{{ log.table_name or '—' }}</td>
+              <td class="text-muted">{{ log.record_id or '—' }}</td>
+              <td>
+                <span class="badge bg-{% if log.status == 'SUCCESS' %}green{% elif log.status == 'FAILURE' %}red{% else %}yellow{% endif %}-lt">
+                  {{ log.status }}
+                </span>
+              </td>
+              <td class="text-muted">{{ log.ip_address or '—' }}</td>
+              <td class="text-muted">{{ log.entry_hash[:12] }}…</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('verify-btn').addEventListener('click', function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
+  fetch('/ui/admin/verify-audit', {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+      const div = document.getElementById('verify-result');
+      div.style.display = '';
+      const d = data.data;
+      if (d.intact) {
+        div.innerHTML = '<div class="alert alert-success">Chain intact — ' + d.total_entries + ' entries verified.</div>';
+      } else {
+        div.innerHTML = '<div class="alert alert-danger">Chain BROKEN at log_id=' + d.tampered_at_log_id + '. Possible tampering detected.</div>';
+      }
+      btn.disabled = false;
+      btn.textContent = 'Verify Chain Integrity';
+    });
+});
+</script>
+{% endblock %}

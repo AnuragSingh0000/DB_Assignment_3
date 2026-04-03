@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Members — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <h2 class="page-title">Members</h2>
+      </div>
+      {% if current_user.role == "Admin" %}
+      <div class="col-auto ms-auto">
+        <a href="/ui/members/new" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24"
+               stroke-width="2" stroke="currentColor" fill="none"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Member
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    <div class="card">
+      <div class="card-header">
+        <div class="input-group">
+          <select id="filter-attribute" class="form-select">
+            <option value="all">All attributes</option>
+            <option value="id">ID</option>
+            <option value="name">Name</option>
+            {% if current_user.role == "Admin" %}
+            <option value="age">Age</option>
+            {% endif %}
+            <option value="role">Role</option>
+            {% if current_user.role == "Admin" %}
+            <option value="email">Email</option>
+            {% endif %}
+            <option value="gender">Gender</option>
+            <option value="join_date">Join Date</option>
+          </select>
+          <input id="search" type="text" class="form-control" placeholder="Enter value to filter..."/>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-hover card-table" id="members-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              {% if current_user.role == "Admin" %}
+              <th>Age</th>
+              {% endif %}
+              <th>Role</th>
+              {% if current_user.role == "Admin" %}
+              <th>Email</th>
+              {% endif %}
+              <th>Gender</th>
+              <th>Join Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for m in members %}
+            <tr>
+              <td class="text-muted">{{ m.MemberID }}</td>
+              <td>
+                <div class="d-flex align-items-center">
+                  {% if current_user.role in ("Admin", "Coach") or current_user.member_id == m.MemberID %}
+                  <a href="/ui/members/{{ m.MemberID }}">{{ m.Name }}</a>
+                  {% else %}
+                  {{ m.Name }}
+                  {% endif %}
+                </div>
+              </td>
+              {% if current_user.role == "Admin" %}
+              <td class="text-muted">{{ m.Age }}</td>
+              {% endif %}
+              <td>
+                <span class="badge bg-{% if m.Role == 'Admin' %}red{% elif m.Role == 'Coach' %}orange{% else %}blue{% endif %}-lt">
+                  {{ m.Role }}
+                </span>
+              </td>
+              {% if current_user.role == "Admin" %}
+              <td class="text-muted">{{ m.Email }}</td>
+              {% endif %}
+              <td class="text-muted">{{ m.Gender }}</td>
+              <td class="text-muted">{{ m.JoinDate }}</td>
+              <td class="text-end">
+                {% if current_user.role in ("Admin", "Coach") or current_user.member_id == m.MemberID %}
+                <a href="/ui/members/{{ m.MemberID }}" class="btn btn-sm btn-outline-primary">View</a>
+                {% endif %}
+                {% if current_user.role == "Admin" or current_user.member_id == m.MemberID %}
+                <a href="/ui/members/{{ m.MemberID }}/edit" class="btn btn-sm btn-outline-secondary">Edit</a>
+                {% endif %}
+                {% if current_user.role == "Admin" %}
+                <form action="/ui/members/{{ m.MemberID }}/delete" method="post" class="d-inline"
+                      onsubmit="return confirm('Delete {{ m.Name }}?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterMembers() {
+  const attribute = document.getElementById('filter-attribute').value;
+  const q = document.getElementById('search').value.toLowerCase();
+  const isAdmin = '{{ current_user.role }}' === 'Admin';
+  const colIndex = isAdmin ?
+    {id: 0, name: 1, age: 2, role: 3, email: 4, gender: 5, join_date: 6} :
+    {id: 0, name: 1, role: 2, gender: 3, join_date: 4};
+  document.querySelectorAll('#members-table tbody tr').forEach(function(row) {
+    if (attribute === 'all') {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    } else {
+      const index = colIndex[attribute];
+      if (index !== undefined) {
+        const cell = row.querySelector(`td:nth-child(${index + 1})`);
+        row.style.display = cell.textContent.toLowerCase().includes(q) ? '' : 'none';
+      }
+    }
+  });
+}
+
+document.getElementById('filter-attribute').addEventListener('change', filterMembers);
+document.getElementById('search').addEventListener('input', filterMembers);
+</script>
+{% endblock %}

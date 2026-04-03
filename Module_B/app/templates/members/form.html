@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{% if member %}Edit {{ member.Name }}{% else %}Add Member{% endif %} — Olympia Track{% endblock %}
+{% block content %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col-auto"><a href="/ui/members" class="btn btn-outline-secondary btn-sm">Back</a></div>
+      <div class="col">
+        <h2 class="page-title">{% if member %}Edit Member{% else %}Add Member{% endif %}</h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="container-xl">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="{% if member %}/ui/members/{{ member.MemberID }}/edit{% else %}/ui/members/new{% endif %}">
+          <div class="row g-3">
+            {% if not member %}
+            <div class="col-md-3">
+              <label class="form-label">Member ID</label>
+              <input type="text" class="form-control" value="Auto-generated" disabled/>
+              <div class="form-text">The system will assign the member ID automatically.</div>
+            </div>
+            {% endif %}
+            <div class="col-md-{% if member %}6{% else %}5{% endif %}">
+              <label class="form-label">Full Name</label>
+              <input type="text" name="name" class="form-control" required
+                     value="{{ form_data.get('Name','') or (member.Name if member else '') }}"/>
+            </div>
+            <div class="col-md-{% if member %}6{% else %}4{% endif %}">
+              <label class="form-label">Image URL <span class="text-muted">(optional)</span></label>
+              <input type="url" name="image" class="form-control" pattern="https?://.*"
+                     placeholder="https://example.com/photo.jpg"
+                     value="{{ form_data.get('Image','') or (member.Image if member else '') }}"/>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control" required
+                     value="{{ form_data.get('Email','') or (member.Email if member else '') }}"/>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Age</label>
+              <input type="number" name="age" class="form-control" required min="1"
+                     value="{{ form_data.get('Age','') or (member.Age if member else '') }}"/>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Country Code</label>
+              <select name="contact_country_code" class="form-select" required>
+                {% for code in country_codes %}
+                <option value="{{ code }}" {% if form_data.get('ContactCountryCode') == code %}selected{% endif %}>{{ code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Contact Number</label>
+              <input type="text" name="contact_number_local" class="form-control" required maxlength="10" pattern="[0-9]{10}"
+                     placeholder="10-digit number" value="{{ form_data.get('ContactNumberLocal','') }}"/>
+              <div class="form-text">Enter exactly 10 digits.</div>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Gender</label>
+              <select name="gender" class="form-select" {% if member %}disabled{% endif %}>
+                <option value="M" {% if (form_data.get('Gender') == 'M') or (member and member.Gender == 'M') %}selected{% endif %}>M</option>
+                <option value="F" {% if (form_data.get('Gender') == 'F') or (member and member.Gender == 'F') %}selected{% endif %}>F</option>
+                <option value="O" {% if (form_data.get('Gender') == 'O') or (member and member.Gender == 'O') %}selected{% endif %}>O</option>
+              </select>
+            </div>
+            {% if not member %}
+            <div class="col-md-2">
+              <label class="form-label">Role</label>
+              <select name="role" class="form-select">
+                <option value="Player" {% if form_data.get('Role') == 'Player' %}selected{% endif %}>Player</option>
+                <option value="Coach" {% if form_data.get('Role') == 'Coach' %}selected{% endif %}>Coach</option>
+                <option value="Admin" {% if form_data.get('Role') == 'Admin' %}selected{% endif %}>Admin</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Join Date</label>
+              <input type="date" name="join_date" class="form-control" required
+                     value="{{ form_data.get('JoinDate','') }}"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Username</label>
+              <input type="text" name="username" class="form-control" required
+                     value="{{ form_data.get('Username','') }}"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Password</label>
+              <input type="password" name="password" class="form-control" required/>
+            </div>
+            {% endif %}
+          </div>
+          <div class="mt-4">
+            <button type="submit" class="btn btn-primary">
+              {% if member %}Save Changes{% else %}Create Member{% endif %}
+            </button>
+            <a href="/ui/members{% if member %}/{{ member.MemberID }}{% endif %}" class="btn ms-2">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
