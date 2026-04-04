@@ -30,21 +30,23 @@ def _import_runtime_modules():
     return modules
 
 
-def _requirement_rows(rc_results, acid_results, fail_results, stress_result):
+def _requirement_rows(rc_results, acid_results, fail_results, stress_results, breaking_point_result):
     acid_by_name = {result.get("test"): result for result in acid_results}
     failure_by_name = {result.get("test"): result for result in fail_results}
     race_by_name = {result.get("test"): result for result in rc_results}
+    all_profiles_passed = all(r.get("passed") for r in stress_results) if stress_results else False
     return [
         ("Concurrent usage safety", race_by_name.get("RC-1: Equipment Issue Race", {}).get("test"), race_by_name.get("RC-1: Equipment Issue Race", {}).get("passed")),
         ("Race condition testing", race_by_name.get("RC-2: Tournament Registration Race", {}).get("test"), race_by_name.get("RC-2: Tournament Registration Race", {}).get("passed")),
         ("Atomicity / rollback", acid_by_name.get("Atomicity: Cross-DB Member Creation", {}).get("test"), acid_by_name.get("Atomicity: Cross-DB Member Creation", {}).get("passed")),
         ("Isolation", acid_by_name.get("Isolation: No Dirty Reads", {}).get("test"), acid_by_name.get("Isolation: No Dirty Reads", {}).get("passed")),
         ("Durability after restart", failure_by_name.get("FS-3: Full Stack Restart Verification", {}).get("test"), failure_by_name.get("FS-3: Full Stack Restart Verification", {}).get("passed")),
-        ("Stress testing under load", stress_result.get("test"), stress_result.get("passed")),
+        ("Stress testing under load", "ST-1: Load Profiles (Medium/Heavy/Spike)", all_profiles_passed),
+        ("Breaking point analysis", breaking_point_result.get("test"), breaking_point_result.get("passed")),
     ]
 
 
-def generate_report(rc_results, acid_results, fail_results, stress_result, verify_results, elapsed):
+def generate_report(rc_results, acid_results, fail_results, stress_results, breaking_point_result, verify_results, elapsed):
     """Generate a Markdown report in results/report.md."""
     lines = []
     lines.append("# Load Test & Failure Simulation Report")
@@ -98,20 +100,40 @@ def generate_report(rc_results, acid_results, fail_results, stress_result, verif
             details.append(f"error={result['error'][:80]}")
         lines.append(f"| {result.get('test', 'unknown')} | {status} | {', '.join(details)} |")
 
-    lines.append("\n## 4. Stress Test\n")
-    lines.append("| Test | Passed | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |")
-    lines.append("|------|--------|----------|--------------|-----------|----------|-----|")
-    lines.append(
-        "| {test} | {status} | {requests} | {failure_rate}% | {mean} | {p95} | {rps} |".format(
-            test=stress_result.get("test", "unknown"),
-            status="PASS" if stress_result.get("passed") else "FAIL",
-            requests=stress_result.get("total_requests", "-"),
-            failure_rate=stress_result.get("failure_rate", "-"),
-            mean=stress_result.get("mean_response_ms", "-"),
-            p95=stress_result.get("p95_ms", "-"),
-            rps=stress_result.get("requests_per_sec", "-"),
+    # --- Section 4: Load Profiles ---
+    lines.append("\n## 4. Stress Test — Load Profiles\n")
+    lines.append("| Profile | Passed | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |")
+    lines.append("|---------|--------|----------|--------------|-----------|----------|-----|")
+    for sr in stress_results:
+        lines.append(
+            "| {profile} | {status} | {requests} | {failure_rate}% | {mean} | {p95} | {rps} |".format(
+                profile=sr.get("profile", "unknown"),
+                status="PASS" if sr.get("passed") else "FAIL",
+                requests=sr.get("total_requests", "-"),
+                failure_rate=sr.get("failure_rate", "-"),
+                mean=sr.get("mean_response_ms", "-"),
+                p95=sr.get("p95_ms", "-"),
+                rps=sr.get("requests_per_sec", "-"),
+            )
         )
-    )
+
+    # --- Section 4b: Breaking point ramp ---
+    lines.append("\n### Ramp to Breaking Point (ST-2)\n")
+    bp = breaking_point_result.get("breaking_point")
+    lines.append(f"**Breaking point:** {bp if bp else 'Not reached (system sustained max load)'}")
+    lines.append(f"**Max sustained users:** {breaking_point_result.get('max_sustained', '-')}\n")
+    lines.append("| Users | Status | Failure Rate | p95 (ms) | RPS |")
+    lines.append("|-------|--------|--------------|----------|-----|")
+    for step in breaking_point_result.get("steps", []):
+        lines.append(
+            "| {users} | {status} | {failure_rate}% | {p95} | {rps} |".format(
+                users=step.get("users", "-"),
+                status=step.get("status", "-"),
+                failure_rate=step.get("failure_rate", "-"),
+                p95=step.get("p95_ms", "-"),
+                rps=step.get("requests_per_sec", "-"),
+            )
+        )
 
     lines.append("\n## 5. Database Consistency Report\n")
     lines.append("| Check | Result |")
@@ -122,10 +144,10 @@ def generate_report(rc_results, acid_results, fail_results, stress_result, verif
     lines.append("\n## 6. Requirement Mapping\n")
     lines.append("| Assignment Requirement | Evidence | Result |")
     lines.append("|------------------------|----------|--------|")
-    for requirement, evidence, passed in _requirement_rows(rc_results, acid_results, fail_results, stress_result):
+    for requirement, evidence, passed in _requirement_rows(rc_results, acid_results, fail_results, stress_results, breaking_point_result):
         lines.append(f"| {requirement} | {evidence or 'N/A'} | {'PASS' if passed else 'FAIL'} |")
 
-    all_results = rc_results + acid_results + fail_results + [stress_result]
+    all_results = rc_results + acid_results + fail_results + stress_results + [breaking_point_result]
     total = len(all_results)
     passed = sum(1 for result in all_results if result.get("passed"))
     lines.append(f"\n## Summary\n")
@@ -182,8 +204,9 @@ def main():
         harness.restart_api()
         modules["test_stress"] = importlib.reload(modules["test_stress"])
 
-        print("\n\n>>> PHASE 4: Stress Test <<<")
-        stress_result = modules["test_stress"].run_stress_test()
+        print("\n\n>>> PHASE 4: Stress Test (Load Profiles + Breaking Point) <<<")
+        stress_results = modules["test_stress"].run_stress_test()
+        breaking_point_result = modules["test_stress"].run_breaking_point_test()
         phase_progress.advance(detail="stress test complete")
 
         print("\n\n>>> PHASE 5: Post-Test Database Verification <<<")
@@ -192,9 +215,9 @@ def main():
         phase_progress.finish(detail="suite complete")
 
     elapsed = time.time() - start
-    report_path = generate_report(rc_results, acid_results, fail_results, stress_result, verify_results, elapsed)
+    generate_report(rc_results, acid_results, fail_results, stress_results, breaking_point_result, verify_results, elapsed)
 
-    all_results = rc_results + acid_results + fail_results + [stress_result]
+    all_results = rc_results + acid_results + fail_results + stress_results + [breaking_point_result]
     total = len(all_results)
     passed = sum(1 for result in all_results if result.get("passed"))
     print(f"\n{'='*70}")

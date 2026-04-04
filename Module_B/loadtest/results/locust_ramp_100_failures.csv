@@ -1,0 +1,5 @@
+Method,Name,Error,Occurrences
+GET,/api/equipment [GET],HTTPError('500 Server Error: Internal Server Error for url: /api/equipment [GET]'),1
+POST,/api/equipment [POST],HTTPError('500 Server Error: Internal Server Error for url: /api/equipment [POST]'),1
+GET,/api/members [GET],HTTPError('500 Server Error: Internal Server Error for url: /api/members [GET]'),1
+POST,/auth/login,HTTPError('500 Server Error: Internal Server Error for url: /auth/login'),65

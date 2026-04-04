@@ -649,14 +649,46 @@ In our automated flow, `test_stress.py` runs Locust headlessly, parses the JSON 
 
 The pass/fail decision is machine-checked against `LOCUST_MAX_FAILURE_RATE` and `LOCUST_MAX_P95_MS`.
 
-### Recommended Load Levels
+### Load Testing vs Stress Testing
 
-| Level | Users | Duration | What it tests |
-|-------|-------|----------|---------------|
-| Light | 10 | 2 min | Baseline performance |
-| Medium | 50 | 5 min | Moderate load |
-| Heavy | 200 | 5 min | High load, near breaking point |
-| Spike | 10 to 500 in 30s | 2 min | Sudden traffic spike (e.g., event goes viral) |
+There is an important distinction between **load testing** and **stress testing**:
+
+- **Load testing (ST-1)** applies a known, fixed workload for a set duration and checks whether the system meets latency/error-rate thresholds. It answers: *"Does the system perform acceptably under this load?"*
+- **Stress testing (ST-2)** progressively increases load until the system degrades or breaks. It answers: *"Where is the system's breaking point?"*
+
+Our suite runs both.
+
+### ST-1: Multiple Load Profiles
+
+Rather than a single fixed load, we run three distinct profiles to exercise different scenarios:
+
+| Profile | Users | Spawn Rate | Duration | Max Failure Rate | Max p95 | Purpose |
+|---------|-------|------------|----------|------------------|---------|---------|
+| Medium  | 50    | 10/s       | 5 min    | 5%               | 2000 ms | Moderate sustained load |
+| Heavy   | 200   | 20/s       | 5 min    | 10%              | 3000 ms | High load, near capacity |
+| Spike   | 500   | 500/s      | 2 min    | 15%              | 5000 ms | Sudden traffic spike (all users arrive at once) |
+
+Each profile produces its own Locust CSV/HTML artifacts (e.g., `locust_medium_stats.csv`, `locust_report_heavy.html`) and is independently pass/fail checked against its thresholds. The thresholds are intentionally looser for heavier profiles — a spike test failing 12% of requests is expected and acceptable, while the same rate under medium load would indicate a real problem.
+
+### ST-2: Ramp to Breaking Point
+
+This test starts at `STRESS_STEP_USERS` (default 50) concurrent users and adds another step every `STRESS_STEP_DURATION` (default 30s) until either:
+- Failure rate exceeds `STRESS_FAILURE_THRESHOLD` (default 20%)
+- p95 latency exceeds `STRESS_P95_THRESHOLD` (default 5000ms)
+- Maximum of `STRESS_MAX_USERS` (default 500) is reached
+
+The ramp test is **observational** — it always "passes" because finding the breaking point IS the result. The report shows a step-by-step table:
+
+```
+| Users | Status         | Failure Rate | p95 (ms) | RPS   |
+|-------|----------------|--------------|----------|-------|
+| 50    | ok             | 0.5%         | 120      | 45.2  |
+| 100   | ok             | 1.2%         | 250      | 82.1  |
+| 150   | ok             | 3.8%         | 890      | 105.3 |
+| 200   | breaking_point | 22.1%        | 5200     | 98.7  |
+```
+
+This tells you that the system comfortably handles 150 concurrent users but degrades at 200.
 
 ### Running Locust
 
@@ -674,14 +706,7 @@ locust -f loadtest/locustfile.py --host=http://127.0.0.1:8001 --headless -u 50 -
 #   -t 2m    = run for 2 minutes
 ```
 
-**What `run_all.py` does now:** it runs Locust in headless mode automatically, parses the JSON output, and stores HTML/CSV artifacts in `loadtest/results/`.
-
-**Current checked-in report snapshot (`loadtest/results/report.md`, generated `2026-04-04 00:10:53`):**
-- 5408 total requests
-- 0.3% failure rate
-- 71.13 ms mean response time
-- 210 ms p95 latency
-- 45.07 requests/sec
+**What `run_all.py` does now:** Phase 4 runs all three load profiles (Medium, Heavy, Spike) followed by the ramp-to-breaking-point test. Each produces its own HTML/CSV artifacts in `loadtest/results/`.
 
 ---
 

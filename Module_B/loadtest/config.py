@@ -54,3 +54,38 @@ LOCUST_SPAWN_RATE = _env_int("LOCUST_SPAWN_RATE", 20)
 LOCUST_DURATION = os.getenv("LOCUST_DURATION", "2m")
 LOCUST_MAX_FAILURE_RATE = float(os.getenv("LOCUST_MAX_FAILURE_RATE", "5"))
 LOCUST_MAX_P95_MS = float(os.getenv("LOCUST_MAX_P95_MS", "2000"))
+
+# --- Multiple load profiles for ST-1 ---
+LOAD_PROFILES = [
+    {
+        "name": "Medium",
+        "users": 50,
+        "spawn_rate": 10,
+        "duration": "5m",
+        "max_failure_rate": 5.0,
+        "max_p95_ms": 2000.0,
+    },
+    {
+        "name": "Heavy",
+        "users": 200,
+        "spawn_rate": 20,
+        "duration": "5m",
+        "max_failure_rate": 10.0,
+        "max_p95_ms": 3000.0,
+    },
+    {
+        "name": "Spike",
+        "users": 500,
+        "spawn_rate": 500,
+        "duration": "2m",
+        "max_failure_rate": 15.0,
+        "max_p95_ms": 5000.0,
+    },
+]
+
+# --- ST-2: Ramp-to-breaking-point config ---
+STRESS_STEP_USERS = _env_int("STRESS_STEP_USERS", 50)
+STRESS_MAX_USERS = _env_int("STRESS_MAX_USERS", 500)
+STRESS_STEP_DURATION = os.getenv("STRESS_STEP_DURATION", "30s")
+STRESS_FAILURE_THRESHOLD = float(os.getenv("STRESS_FAILURE_THRESHOLD", "20"))
+STRESS_P95_THRESHOLD = float(os.getenv("STRESS_P95_THRESHOLD", "5000"))
