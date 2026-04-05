@@ -11,6 +11,7 @@ from helpers import (
 )
 from config import BASE_URL
 from progress import ProgressBar, print_phase_progress
+from harness import get_active_harness
 
 
 def _banner(title):
@@ -339,8 +340,12 @@ def test_isolation_valid_states():
 # ── Durability: Data persists after restart ────────────────────────────────
 
 def test_durability():
-    """Create data, verify it persists (no restart needed — just verify committed data is readable)."""
+    """Create data, restart the full stack, verify committed data persists."""
     _banner("ACID - Durability: Committed Data Persistence")
+
+    harness = get_active_harness()
+    if harness is None:
+        raise RuntimeError("Managed harness is required for durability test.")
 
     admin = admin_session()
 
@@ -351,6 +356,14 @@ def test_durability():
     member_id = r.json()["data"]["member_id"]
     expected_email = payload["email"]
     print(f"  Created member ID={member_id}, email={expected_email}")
+
+    # Restart the full stack (API + DB)
+    print("  Restarting full stack...")
+    harness.restart_stack()
+    print("  Stack restarted.")
+
+    # Re-authenticate after restart
+    admin = admin_session()
 
     # Verify via direct DB query
     conn, cur = get_db("olympia_track")
