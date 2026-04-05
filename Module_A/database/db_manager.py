@@ -129,6 +129,9 @@ class DatabaseManager:
                 )
                 
                 tbl, _ = self.get_table(db_name, tname)
+                if tbl == None:
+                    print(f'Unable to fetch tables')
+                    return
                 
                 # Restore metadata constraints
                 tbl.constraints = info['constraints']

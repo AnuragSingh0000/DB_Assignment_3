@@ -177,6 +177,8 @@ class Transaction:
 # ──────────────────────────────────────────────
 
 class TransactionManager:
+    _shared_lock_mgr = LockManager()
+
     def __init__(self, db_manager, wal_path: str = "wal.log"):
         self._db   = db_manager
         
@@ -185,7 +187,9 @@ class TransactionManager:
             self._db.load_from_disk('database.dat')
             
         self._wal  = WALManager(wal_path)
-        self._lock_mgr = LockManager()
+        # Share one lock manager across all TransactionManager instances
+        # so table locks are visible process-wide.
+        self._lock_mgr = self.__class__._shared_lock_mgr
         self._active: dict[str, Transaction] = {}
         self._global_lock = threading.Lock()
         

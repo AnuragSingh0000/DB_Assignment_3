@@ -1,8 +1,8 @@
-{"type": "BEGIN", "tx_id": "7a8377b8", "timestamp": 1774945052.0737383}
-{"type": "ABORT", "tx_id": "7a8377b8", "timestamp": 1774945052.075538}
-{"type": "BEGIN", "tx_id": "d626b953", "timestamp": 1774945052.0762796}
-{"type": "ABORT", "tx_id": "d626b953", "timestamp": 1774945052.0771623}
-{"type": "BEGIN", "tx_id": "ad0cb84b", "timestamp": 1774945052.0988114}
-{"type": "OP", "tx_id": "ad0cb84b", "op": "UPDATE", "db": "sports_db", "table": "member", "key": 10, "before": {"MemberID": 10, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "after": {"MemberID": 999, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "timestamp": 1774945052.0997684}
-{"type": "OP", "tx_id": "ad0cb84b", "op": "INSERT", "db": "sports_db", "table": "sport", "key": 99, "before": null, "after": {"SportID": 99, "SportName": "Quidditch", "Category": "Magic", "MaxPlayersPerTeam": -5}, "timestamp": 1774945052.1004775}
-{"type": "ABORT", "tx_id": "ad0cb84b", "timestamp": 1774945052.1014004}
+{"type": "BEGIN", "tx_id": "09811542", "timestamp": 1775370307.9575157}
+{"type": "ABORT", "tx_id": "09811542", "timestamp": 1775370307.9600914}
+{"type": "BEGIN", "tx_id": "f46199e9", "timestamp": 1775370307.964303}
+{"type": "ABORT", "tx_id": "f46199e9", "timestamp": 1775370307.964303}
+{"type": "BEGIN", "tx_id": "1fafee83", "timestamp": 1775370308.032452}
+{"type": "OP", "tx_id": "1fafee83", "op": "UPDATE", "db": "sports_db", "table": "member", "key": 10, "before": {"MemberID": 10, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "after": {"MemberID": 999, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "timestamp": 1775370308.0338902}
+{"type": "OP", "tx_id": "1fafee83", "op": "INSERT", "db": "sports_db", "table": "sport", "key": 99, "before": null, "after": {"SportID": 99, "SportName": "Quidditch", "Category": "Magic", "MaxPlayersPerTeam": -5}, "timestamp": 1775370308.0338902}
+{"type": "ABORT", "tx_id": "1fafee83", "timestamp": 1775370308.0400681}
