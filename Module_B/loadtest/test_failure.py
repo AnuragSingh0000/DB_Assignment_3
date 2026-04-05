@@ -399,4 +399,14 @@ def run_all():
 
 
 if __name__ == "__main__":
-    run_all()
+    import os
+    from pathlib import Path
+    from harness import ManagedHarness
+    import config as loadtest_config
+
+    module_b_dir = Path(__file__).resolve().parents[1]
+    with ManagedHarness(module_b_dir, port=loadtest_config.TEST_API_PORT, pool_size=loadtest_config.FAILURE_DB_POOL_SIZE) as harness:
+        os.environ["TEST_BASE_URL"] = harness.base_url
+        # Update the module-level BASE_URL so test functions pick up the managed server URL
+        BASE_URL = harness.base_url  # noqa: F811
+        run_all()
