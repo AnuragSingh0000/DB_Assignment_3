@@ -32,19 +32,40 @@ class DatabaseManager:
         """
         return list(self.databases.keys())
 
-    def create_table(self, db_name, table_name, schema, order=8, search_key=None):
+    def create_table(
+        self,
+        db_name,
+        table_name,
+        schema,
+        order=8,
+        search_key=None,
+        constraints=None,
+        foreign_keys=None,
+        referenced_by=None,
+    ):
         """
         Create a new table within a specified database.
         - schema: dictionary of column names and data types
         - order: B+ tree order for indexing
         - search_key: field name to use as the key in the B+ Tree
+        - constraints: per-column validation rules
+        - foreign_keys: mapping of local column -> referenced table name
+        - referenced_by: list of (child_table, child_column) tuples
         """
         if db_name not in self.databases:
             return False, f"Database '{db_name}' does not exist"
         if table_name in self.databases[db_name]:
             return False, f"Table '{table_name}' already exists"
 
-        new_table = Table(table_name, schema, order, search_key)
+        new_table = Table(
+            table_name,
+            schema,
+            order,
+            search_key,
+            constraints,
+            foreign_keys,
+            referenced_by,
+        )
         self.databases[db_name][table_name] = new_table
         return True, f"Table '{table_name}' created successfully in database '{db_name}'"
 
@@ -125,19 +146,17 @@ class DatabaseManager:
                     tname, 
                     info['schema'], 
                     order=info['order'], 
-                    search_key=info['search_key']
+                    search_key=info['search_key'],
+                    constraints=info.get('constraints'),
+                    foreign_keys=info.get('foreign_keys'),
+                    referenced_by=info.get('referenced_by'),
                 )
                 
                 tbl, _ = self.get_table(db_name, tname)
                 if tbl == None:
                     print(f'Unable to fetch tables')
                     return
-                
-                # Restore metadata constraints
-                tbl.constraints = info['constraints']
-                tbl.foreign_keys = info['foreign_keys']
-                tbl.referenced_by = info['referenced_by']
-                
+
                 # Restore the actual records
                 for _, record in info['records']:
                     tbl.insert(record)
