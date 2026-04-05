@@ -7,8 +7,8 @@ class Table:
         self.order = order
         self.data = BPlusTree(order=order)
         
-        # constraints: {'age': {'CHECK': 'x >= 18'}, 'email': {'NOT NULL': True}}
-        # Note: CHECK constraints are now strings to allow safe pickling.
+        # constraints: {'age': {'CHECK': ['x >= 18', 'x <= 65']}, 'email': {'NOT NULL': True}}
+        # Note: CHECK constraints are stored as eval-safe strings (or a list of strings) for pickling.
         self.constraints = constraints or {}
         
         # foreign_keys: {'user_id': 'Users'}  (Maps local column to target table)
@@ -52,17 +52,20 @@ class Table:
             if rules.get('NOT NULL') and val is None:
                 return False, f"Constraint Error: '{key}' cannot be NULL"
 
-            # String-based CHECK Constraint Evaluation
+            # CHECK constraints can be a single expression string or a list of expressions.
             if 'CHECK' in rules and val is not None:
-                check_expr = rules['CHECK']
-                try:
-                    # Evaluate the string expression. 
-                    # 'x' represents the current column value, 'record' is the full dictionary.
-                    is_valid = eval(check_expr, {}, {"x": val, "record": record})
-                    if not is_valid:
-                        return False, f"Constraint Error: CHECK failed for '{key}'='{val}'"
-                except Exception as e:
-                    return False, f"Constraint Error: Failed to evaluate CHECK '{check_expr}' for '{key}': {str(e)}"
+                check_exprs = rules['CHECK']
+                if not isinstance(check_exprs, list):
+                    check_exprs = [check_exprs]
+
+                for check_expr in check_exprs:
+                    try:
+                        # 'x' represents the current column value, 'record' is the full dictionary.
+                        is_valid = eval(check_expr, {}, {"x": val, "record": record})
+                        if not is_valid:
+                            return False, f"Constraint Error: CHECK failed for '{key}'='{val}'"
+                    except Exception as e:
+                        return False, f"Constraint Error: Failed to evaluate CHECK '{check_expr}' for '{key}': {str(e)}"
 
             # UNIQUE Check
             if rules.get('UNIQUE') and val is not None:

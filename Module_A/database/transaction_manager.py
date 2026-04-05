@@ -211,13 +211,20 @@ class TransactionManager:
 
         self._wal.log_commit(tx.tx_id)
         tx.status = TxStatus.COMMITTED
-        self._lock_mgr.release_all(tx.tx_id)
+
         with self._global_lock:
             self._active.pop(tx.tx_id, None)
-            
-        if hasattr(self._db, 'save_to_disk'):
-            self._db.save_to_disk('database.dat')
-            
+            should_checkpoint = len(self._active) == 0
+
+        try:
+            # Only checkpoint when the system is idle. Because writes are applied
+            # in-place, a snapshot taken while some other transaction is still
+            # active could capture uncommitted changes from that transaction.
+            if should_checkpoint:
+                self._checkpoint()
+        finally:
+            self._lock_mgr.release_all(tx.tx_id)
+
         print(f"[TxManager] COMMIT tx={tx.tx_id}")
         return True, f"Transaction {tx.tx_id} committed successfully"
 
@@ -234,9 +241,15 @@ class TransactionManager:
 
         self._wal.log_abort(tx.tx_id)
         tx.status = TxStatus.ABORTED
-        self._lock_mgr.release_all(tx.tx_id)
         with self._global_lock:
             self._active.pop(tx.tx_id, None)
+            should_checkpoint = len(self._active) == 0
+
+        try:
+            if should_checkpoint:
+                self._checkpoint()
+        finally:
+            self._lock_mgr.release_all(tx.tx_id)
 
         if errors:
             msg = f"Rolled back with errors: {'; '.join(errors)}"
@@ -393,6 +406,11 @@ class TransactionManager:
     def _assert_active(self, tx: Transaction):
         if tx.status != TxStatus.ACTIVE:
             raise TransactionError(f"Transaction {tx.tx_id} is {tx.status.name}, not ACTIVE")
+
+    def _checkpoint(self):
+        if hasattr(self._db, 'save_to_disk'):
+            self._db.save_to_disk('database.dat')
+        self._wal.clear()
 
     def _undo_single(self, op_entry: dict):
         op    = op_entry["op"]

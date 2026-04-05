@@ -1,8 +1,0 @@
-{"type": "BEGIN", "tx_id": "beffb3d3", "timestamp": 1775379567.8603284}
-{"type": "ABORT", "tx_id": "beffb3d3", "timestamp": 1775379567.8629682}
-{"type": "BEGIN", "tx_id": "758c8fae", "timestamp": 1775379567.8629682}
-{"type": "ABORT", "tx_id": "758c8fae", "timestamp": 1775379567.8629682}
-{"type": "BEGIN", "tx_id": "70907375", "timestamp": 1775379567.9340782}
-{"type": "OP", "tx_id": "70907375", "op": "UPDATE", "db": "sports_db", "table": "member", "key": 10, "before": {"MemberID": 10, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "after": {"MemberID": 999, "Name": "Riya Gupta", "Image": "img/riya.jpg", "Age": 20, "Email": "riya.gupta@iitgn.ac.in", "ContactNumber": "9876543210", "Gender": "F", "Role": "Player", "JoinDate": "2024-08-25"}, "timestamp": 1775379567.9429233}
-{"type": "OP", "tx_id": "70907375", "op": "INSERT", "db": "sports_db", "table": "sport", "key": 99, "before": null, "after": {"SportID": 99, "SportName": "Quidditch", "Category": "Magic", "MaxPlayersPerTeam": -5}, "timestamp": 1775379567.9429233}
-{"type": "ABORT", "tx_id": "70907375", "timestamp": 1775379567.9429233}
