@@ -1,2 +1,1 @@
 Method,Name,Error,Occurrences
-POST,/auth/login,HTTPError('500 Server Error: Internal Server Error for url: /auth/login'),18

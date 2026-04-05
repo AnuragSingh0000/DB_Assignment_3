@@ -42,6 +42,7 @@ def _requirement_rows(rc_results, acid_results, fail_results, stress_results, br
         ("Isolation", acid_by_name.get("Isolation: No Dirty Reads", {}).get("test"), acid_by_name.get("Isolation: No Dirty Reads", {}).get("passed")),
         ("Durability after restart", failure_by_name.get("FS-3: Full Stack Restart Verification", {}).get("test"), failure_by_name.get("FS-3: Full Stack Restart Verification", {}).get("passed")),
         ("Stress testing under load", "ST-1: Load Profiles (Medium/Heavy/Spike)", all_profiles_passed),
+        ("Correctness under stress (ACID invariants)", "Post-stress invariant checks per profile", all(r.get("correctness_passed", False) for r in stress_results) if stress_results else False),
         ("Breaking point analysis", breaking_point_result.get("test"), breaking_point_result.get("passed")),
     ]
 
@@ -102,13 +103,19 @@ def generate_report(rc_results, acid_results, fail_results, stress_results, brea
 
     # --- Section 4: Load Profiles ---
     lines.append("\n## 4. Stress Test — Load Profiles\n")
-    lines.append("| Profile | Passed | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |")
-    lines.append("|---------|--------|----------|--------------|-----------|----------|-----|")
+    lines.append("| Profile | Passed | Correctness | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |")
+    lines.append("|---------|--------|-------------|----------|--------------|-----------|----------|-----|")
     for sr in stress_results:
+        correctness = sr.get("correctness", {})
+        correctness_str = (
+            "PASS" if sr.get("correctness_passed") else
+            ("FAIL(" + ", ".join(k for k, v in correctness.items() if not v) + ")" if correctness else "N/A")
+        )
         lines.append(
-            "| {profile} | {status} | {requests} | {failure_rate}% | {mean} | {p95} | {rps} |".format(
+            "| {profile} | {status} | {correctness} | {requests} | {failure_rate}% | {mean} | {p95} | {rps} |".format(
                 profile=sr.get("profile", "unknown"),
                 status="PASS" if sr.get("passed") else "FAIL",
+                correctness=correctness_str,
                 requests=sr.get("total_requests", "-"),
                 failure_rate=sr.get("failure_rate", "-"),
                 mean=sr.get("mean_response_ms", "-"),

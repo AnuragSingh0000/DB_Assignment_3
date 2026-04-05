@@ -1,1 +1,2 @@
 Method,Name,Error,Occurrences
+POST,/api/registrations [POST],HTTPError('409 Client Error: Conflict for url: /api/registrations [POST]'),145

@@ -1,7 +1,7 @@
 # Load Test & Failure Simulation Report
 
-**Generated:** 2026-04-04 18:01:09
-**Total Duration:** 888.3s
+**Generated:** 2026-04-05 17:50:22
+**Total Duration:** 805.2s
 
 ## 1. Race Condition Tests
 
@@ -9,7 +9,7 @@
 |------|--------|---------|
 | RC-1: Equipment Issue Race | PASS | success_count=5, fail_count=15, db_issued=5 |
 | RC-2: Tournament Registration Race | PASS | success_count=1, fail_count=9, db_count=1 |
-| RC-3: Concurrent ID Generation | PASS | success_count=20, fail_count=0, duplicates=0 |
+| RC-3: Concurrent ID Generation | PASS | success_count=10, fail_count=10, duplicates=0 |
 
 ## 2. ACID Verification
 
@@ -31,23 +31,21 @@
 
 ## 4. Stress Test — Load Profiles
 
-| Profile | Passed | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |
-|---------|--------|----------|--------------|-----------|----------|-----|
-| Medium | PASS | 7357 | 0.0% | 37.29 | 87.0 | 24.52 |
-| Heavy | PASS | 14641 | 2.17% | 92.97 | 270.0 | 48.8 |
-| Spike | PASS | 3719 | 12.58% | 145.04 | 940.0 | 30.99 |
+| Profile | Passed | Correctness | Requests | Failure Rate | Mean (ms) | p95 (ms) | RPS |
+|---------|--------|-------------|----------|--------------|-----------|----------|-----|
+| Medium | PASS | PASS | 7392 | 1.96% | 33.03 | 70.0 | 24.64 |
+| Heavy | PASS | PASS | 14666 | 4.21% | 82.93 | 260.0 | 48.89 |
+| Spike | PASS | PASS | 4008 | 13.95% | 141.13 | 920.0 | 33.4 |
 
 ### Ramp to Breaking Point (ST-2)
 
-**Breaking point:** 200
-**Max sustained users:** 200
+**Breaking point:** 100
+**Max sustained users:** 100
 
 | Users | Status | Failure Rate | p95 (ms) | RPS |
 |-------|--------|--------------|----------|-----|
-| 50 | ok | 3.44% | 640.0 | 17.47 |
-| 100 | ok | 11.17% | 730.0 | 20.3 |
-| 150 | ok | 15.9% | 740.0 | 24.73 |
-| 200 | breaking_point | 21.03% | 730.0 | 26.63 |
+| 50 | ok | 5.73% | 820.0 | 17.47 |
+| 100 | error | -% | - | - |
 
 ## 5. Database Consistency Report
 
@@ -70,10 +68,11 @@
 | Isolation | Isolation: No Dirty Reads | PASS |
 | Durability after restart | FS-3: Full Stack Restart Verification | PASS |
 | Stress testing under load | ST-1: Load Profiles (Medium/Heavy/Spike) | PASS |
+| Correctness under stress (ACID invariants) | Post-stress invariant checks per profile | PASS |
 | Breaking point analysis | ST-2: Ramp to Breaking Point | PASS |
 
 ## Summary
 
 - **Test Scenarios:** 15/15 passed
 - **DB Checks:** 6/6 passed
-- **Duration:** 888.3s
+- **Duration:** 805.2s

@@ -4,8 +4,15 @@ Run:
     locust -f locustfile.py --host=http://localhost:8000
     # or headless:
     locust -f locustfile.py --host=http://localhost:8000 --headless -u 50 -r 10 -t 2m
+
+Shared fixture IDs (injected via env vars by test_stress.py before launching locust):
+    STRESS_EQUIP_ID        — EquipmentID all CoachUsers hammer for issue_equipment
+    STRESS_TOURNAMENT_ID   — TournamentID all CoachUsers race to register for
+    STRESS_TEAM_ID         — TeamID used for tournament registration
+    STRESS_PLAYER_ID       — MemberID used as the equipment issue target
 """
 
+import os
 import random
 import string
 from locust import HttpUser, task, between, events
@@ -79,6 +86,15 @@ class CoachUser(_AuthMixin, HttpUser):
     username = COACH_CREDS["username"]
     password = COACH_CREDS["password"]
 
+    def on_start(self):
+        super().on_start()
+        # Read shared fixture IDs injected by test_stress.py via env vars.
+        # Default to 0 when running locust standalone (no stress fixtures).
+        self._equip_id   = int(os.environ.get("STRESS_EQUIP_ID",       0) or 0)
+        self._tourney_id = int(os.environ.get("STRESS_TOURNAMENT_ID",  0) or 0)
+        self._team_id    = int(os.environ.get("STRESS_TEAM_ID",        0) or 0)
+        self._player_id  = int(os.environ.get("STRESS_PLAYER_ID",      0) or 0)
+
     @task(5)
     def list_teams(self):
         self.client.get("/api/teams", name="/api/teams [GET]")
@@ -98,6 +114,34 @@ class CoachUser(_AuthMixin, HttpUser):
     @task(1)
     def list_performance_logs(self):
         self.client.get("/api/performance-logs", name="/api/performance-logs [GET]")
+
+    @task(2)
+    def issue_equipment(self):
+        """Contested write: many coaches issue qty=1 from the same equipment.
+        Tests isolation — DB must enforce issued <= total under concurrent load."""
+        if not self._equip_id or not self._player_id:
+            return
+        self.client.post(
+            "/api/equipment/issue",
+            json={
+                "equipment_id": self._equip_id,
+                "member_id":    self._player_id,
+                "issue_date":   "2025-08-01",
+                "quantity":     1,
+            },
+            name="/api/equipment/issue [POST]",
+        )
+
+    @task(1)
+    def register_tournament(self):
+        """Contested write: all coaches race to register the same team for the same tournament.
+        Tests isolation — only one registration per (tournament, team) must survive."""
+        if not self._tourney_id or not self._team_id:
+            return
+        self.client.post(
+            f"/api/registrations/tournament/{self._tourney_id}/team/{self._team_id}",
+            name="/api/registrations [POST]",
+        )
 
 
 class PlayerUser(_AuthMixin, HttpUser):
